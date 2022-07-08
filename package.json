@@ -1,0 +1,21 @@
+{
+  "name": "ovh-manager",
+  "version": "0.1.0",
+  "main": "index.mjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mabhub/ovh-manager.git"
+  },
+  "keywords": [],
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/mabhub/ovh-manager/issues"
+  },
+  "dependencies": {
+    "chalk": "^5.0.1",
+    "cli-table3": "^0.6.2",
+    "commander": "^9.3.0",
+    "dotenv": "^16.0.1",
+    "ovh": "^2.0.3"
+  }
+}
