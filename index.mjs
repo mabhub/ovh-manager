@@ -41,7 +41,6 @@ const accessRules = [
 
 const cache = JSON.parse(await fs.readFile(`${basePath}/cache.json`));
 
-const authorize = () => ovhRequest('POST', '/auth/credential', { accessRules })
 const getMe = () => ovhRequest('GET', '/me');
 const summary = await ovhRequest('GET', `/email/domain/${domain}/summary`);
 
@@ -66,11 +65,9 @@ const updateRedirections = async () => {
   const deletedRedirIds = existingRedirIds.filter(id => !allRedirIds.includes(id));
 
   cache.redirections = [
-    ...cache.redirections
-      .sort(({ from: a }, { from: b }) => a.localeCompare(b))
-      .filter(({ id }) => !deletedRedirIds.includes(id)),
+    ...cache.redirections.filter(({ id }) => !deletedRedirIds.includes(id)),
     ...newRedirections,
-  ];
+  ].sort(({ from: a }, { from: b }) => a.localeCompare(b));
 
   console.log(`${newRedirections.length} new redirection(s)`);
   console.log(`${deletedRedirIds.length} deleted redirection(s)`);
@@ -79,7 +76,7 @@ const updateRedirections = async () => {
 };
 
 const prettyMail = str => {
-  if (str === 'spam@${domain}') {
+  if (str === `spam@${domain}`) {
     return chalk.red(str);
   }
 
@@ -87,13 +84,13 @@ const prettyMail = str => {
   return `${left}${chalk.gray(`@${right}`)}`;
 };
 
-const listRedirections = async () => {
+const listRedirections = async (filterFn = () => true) => {
   const output = new Table({
     head: ['id', 'from', 'to'],
   });
 
   output.push(...cache.redirections
-    // .filter(({ }))
+    .filter(filterFn)
     .map(({ id, from, to }) => [
       chalk.gray(id),
       { content: prettyMail(from), hAlign: 'right' },
@@ -139,83 +136,75 @@ const createDefaultRedir = str => createRedir(
 
 );
 
-const redir = async (action, args, options) => {
-  const [from, to] = args;
-
-  if (options.update) {
-    await updateRedirections();
-  }
-
-  switch (action) {
-    case 'create': {
-      if (!args.length) {
-        return;
-      }
-
-      if (args.length === 1) {
-        await createDefaultRedir(from);
-      }
-
-      if (args.length === 2) {
-        await createRedir(from, to);
-      }
-
-      break;
-    }
-
-    case 'ban': {
-      if (from) {
-        await createRedir(`${from}@${domain}`, `spam@${domain}`);
-      }
-      break;
-    }
-
-    case 'update': {
-      await updateRedirections();
-      break;
-    }
-
-    case 'list': {
-      await listRedirections();
-      break;
-    }
-
-    case 'del':
-    case 'delete':
-    case 'rm':
-    case 'remove': {
-      await deleteRedir(...args);
-      break;
-    }
-
-    case 'change': {
-      if (from && to) {
-        await changeRedir(redirByFrom(from).id, to);
-      }
-      break;
-    }
-  }
-
-};
-
-const status = async () => {
-  console.log(await getMe());
-};
-
 const program = new Command();
 
 program
-  .name('ovh');
+  .name('ovh')
+  .description('OVH cli manager');
 
 program
-  .command('redir <action> [arguments...]')
-  .description('Manage redirections')
-  .option('-u , --update', 'Update data before action')
-  .action(redir);
+  .command('auth')
+  .action(async () => console.log(await ovhRequest('POST', '/auth/credential', { accessRules })));
+
+const redir = program
+  .command('redir')
+  .description('Manage redirections');
+
+redir
+  .command('list')
+  .description('List all cached redirections')
+  .option('-u, --update', 'Update before displaying redirections')
+  .option('-s, --no-spam', 'Hide spam reidrections')
+  .action(async ({ update, spam }) => {
+    update && await updateRedirections();
+    await listRedirections(({ to }) => spam || to !== `spam@${domain}`);
+  });
+
+redir
+  .command('update')
+  .description('Update cached redirections')
+  .action(updateRedirections);
+
+redir
+  .command('ban <localPart...>')
+  .description(`Create redirections localPart@${domain} to spam@${domain}`)
+  .action(async localParts => {
+    for await (const localPart of localParts) {
+      await createRedir(`${localPart}@${domain}`, `spam@${domain}`);
+    }
+    await updateRedirections();
+  });
+
+redir
+  .command('create')
+  .description('Create a new redirection')
+  .argument('<from>')
+  .argument('[to]')
+  .action(async (from, to) => {
+    if (to) {
+      await createRedir(from, to);
+    } else {
+      await createDefaultRedir(from);
+    }
+
+    await updateRedirections();
+  });
+
+redir
+  .command('delete')
+  .description('Delete an existing redirection')
+  .argument('<from...>')
+  .action(async items => {
+    for await (const item of items) {
+      const isId = Number(item).toString() === item;
+      await deleteRedir(isId ? item : redirByFrom(item).id);
+    }
+    await updateRedirections();
+  });
 
 program
   .command('status')
   .description('Account informations')
-  .action(status);
+  .action(async () => console.log(await getMe()));
 
 program.parse();
