@@ -165,7 +165,7 @@ redir
   .command('list')
   .description('List all cached redirections')
   .option('-u, --update', 'Update before displaying redirections')
-  .option('-s, --no-spam', 'Hide spam reidrections')
+  .option('-s, --no-spam', 'Hide spam redirections')
   .action(async ({ update, spam }) => {
     update && await updateRedirections();
     await listRedirections(({ to }) => spam || to !== `spam@${domain}`);
@@ -192,13 +192,18 @@ redir
   .argument('<from>')
   .argument('[to]')
   .action(async (from, to) => {
-    if (to) {
-      await createRedir(from, to);
-    } else {
-      await createDefaultRedir(from);
+    try {
+      const fromSanitized = validateCliArg(from, 'localOrEmail');
+      const toSanitized = to ? validateCliArg(to, 'email') : undefined;
+      if (toSanitized) {
+        await createRedir(fromSanitized, toSanitized);
+      } else {
+        await createDefaultRedir(fromSanitized);
+      }
+      await updateRedirections();
+    } catch (err) {
+      console.error('Invalid argument:', err.message);
     }
-
-    await updateRedirections();
   });
 
 redir
@@ -206,11 +211,22 @@ redir
   .description('Delete an existing redirection')
   .argument('<from...>')
   .action(async items => {
-    for await (const item of items) {
-      const isId = Number(item).toString() === item;
-      await deleteRedir(isId ? item : redirByFrom(item).id);
+    try {
+      for await (const item of items) {
+        try {
+          const isId = Number(item).toString() === item;
+          const sanitized = isId
+          ? validateCliArg(item, 'id')
+          : validateCliArg(item, 'localOrEmail');
+          await deleteRedir(isId ? sanitized : redirByFrom(sanitized).id);
+        } catch (err) {
+          console.error(`Failed to delete "${item}":`, err.message);
+        }
+      }
+      await updateRedirections();
+    } catch (err) {
+      console.error('Unexpected error:', err.message);
     }
-    await updateRedirections();
   });
 
 program
@@ -223,3 +239,86 @@ program
   .action(async () => console.log(await ovhRequest('GET', `/email/domain/${domain}/account`)));
 
 program.parse();
+
+// Global error handling for unhandled promise rejections and uncaught exceptions
+process.on('unhandledRejection', (reason) => {
+  // Never log secrets or sensitive data
+  console.error('\nAn error occurred. Please try again later.');
+  // Technical details for devs (filtered)
+  if (process.env.NODE_ENV === 'development') {
+    console.error('[DEBUG] Technical detail (unhandledRejection):', maskSecretsInLog(reason));
+  }
+});
+
+process.on('uncaughtException', (err) => {
+  // Never log secrets or sensitive data
+  console.error('\nA critical error occurred. Please try again later.');
+  // Technical details for devs (filtered)
+  if (process.env.NODE_ENV === 'development') {
+    console.error('[DEBUG] Technical detail (uncaughtException):', maskSecretsInLog(err));
+  }
+});
+
+/**
+ * Validate and sanitize a CLI argument (local part, email or id).
+ * Throws an Error if invalid.
+ * @param {string} value - The CLI argument to validate.
+ * @param {'localOrEmail'|'email'|'id'} type - The expected type of the argument.
+ * @returns {string} - The sanitized value.
+ * @throws {Error} - If the value is invalid.
+ * @author Copilot
+ */
+const validateCliArg = (value, type) => {
+  if (typeof value !== 'string') {
+    throw new Error('Invalid argument: value must be a string.');
+  }
+  const trimmed = value.trim();
+  if (type === 'id') {
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error('Invalid id: must be a positive integer.');
+    }
+    return trimmed;
+  }
+  if (type === 'email') {
+    // Simple RFC5322-like email validation
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      throw new Error('Invalid email address.');
+    }
+    return trimmed;
+  }
+  if (type === 'localOrEmail') {
+    // Accept local part (no @) or full email
+    if (/^[^@\s]+$/.test(trimmed)) {
+      return trimmed;
+    }
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      return trimmed;
+    }
+    throw new Error('Invalid local part or email address.');
+  }
+  throw new Error('Unknown validation type.');
+}
+
+/**
+ * Mask sensitive values (API keys, secrets, tokens) in any object or string for logging.
+ * @param {any} input - The value to sanitize for logs.
+ * @returns {any} - The sanitized value.
+ * @author Copilot
+ */
+const maskSecretsInLog = (input) => {
+  const secrets = [
+    process.env.APP_KEY,
+    process.env.APP_SECRET,
+    process.env.CONSUMER_KEY,
+    process.env.DEFAULT_TO,
+  ].filter(Boolean);
+  let str = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+  for (const secret of secrets) {
+    if (secret && typeof secret === 'string' && secret.length > 4) {
+      // Only mask if the secret is not trivial
+      const safe = '[REDACTED]';
+      str = str.split(secret).join(safe);
+    }
+  }
+  return str;
+}
