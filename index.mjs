@@ -1,7 +1,7 @@
 #!/bin/sh
 //bin/false || export NVM_DIR="$HOME/.nvm"
 //bin/false || [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-//bin/false || nvm use 18
+//bin/false || nvm use 18 --silent
 //bin/false || exec /usr/bin/env node --no-warnings --max-http-header-size 15000 "$0" "$@"
 
 import { dirname } from 'path';
@@ -39,12 +39,22 @@ const accessRules = [
   { 'method': 'DELETE', 'path': '/*'}
 ];
 
-const cache = JSON.parse(await fs.readFile(`${basePath}/cache.json`));
+let cache = {};
+try {
+  cache = JSON.parse(await fs.readFile(`${basePath}/cache.json`));
+} catch (err) {
+  console.error(err);
+}
+if (!cache[domain]) {
+  cache[domain] = {
+    redirections: [],
+  };
+}
 
 const getMe = () => ovhRequest('GET', '/me');
 const summary = await ovhRequest('GET', `/email/domain/${domain}/summary`);
 
-const redirByFrom = str => cache.redirections.find(({ from }) => [str, `${str}@${domain}`].includes(from)) || {};
+const redirByFrom = str => cache[domain].redirections.find(({ from }) => [str, `${str}@${domain}`].includes(from)) || {};
 
 /**
  * Met à jour cache.json en ajoutant les nouvelles redirections,
@@ -52,7 +62,7 @@ const redirByFrom = str => cache.redirections.find(({ from }) => [str, `${str}@$
  */
 const updateRedirections = async () => {
   const allRedirIds = await ovhRequest('GET', `/email/domain/${domain}/redirection`);
-  const existingRedirIds = cache.redirections.map(({ id }) => id);
+  const existingRedirIds = cache[domain].redirections.map(({ id }) => id);
 
   const newRedirIds = allRedirIds.filter(rId => !existingRedirIds.includes(rId));
   const newRedirections = [];
@@ -64,11 +74,12 @@ const updateRedirections = async () => {
 
   const deletedRedirIds = existingRedirIds.filter(id => !allRedirIds.includes(id));
 
-  cache.redirections = [
-    ...cache.redirections.filter(({ id }) => !deletedRedirIds.includes(id)),
+  cache[domain].redirections = [
+    ...cache[domain].redirections.filter(({ id }) => !deletedRedirIds.includes(id)),
     ...newRedirections,
   ].sort(({ from: a }, { from: b }) => a.localeCompare(b));
 
+  console.log(`${existingRedirIds.length} remote redirection(s)`);
   console.log(`${newRedirections.length} new redirection(s)`);
   console.log(`${deletedRedirIds.length} deleted redirection(s)`);
 
@@ -89,7 +100,7 @@ const listRedirections = async (filterFn = () => true) => {
     head: ['id', 'from', 'to'],
   });
 
-  output.push(...cache.redirections
+  output.push(...cache[domain].redirections
     .filter(filterFn)
     .map(({ id, from, to }) => [
       chalk.gray(id),
@@ -143,7 +154,7 @@ program
   .description('OVH cli manager');
 
 program
-  .command('auth')
+  .command('auth') // https://www.ovh.com/auth/api/createApp
   .action(async () => console.log(await ovhRequest('POST', '/auth/credential', { accessRules })));
 
 const redir = program
@@ -206,5 +217,9 @@ program
   .command('status')
   .description('Account informations')
   .action(async () => console.log(await getMe()));
+
+program
+  .command('quota')
+  .action(async () => console.log(await ovhRequest('GET', `/email/domain/${domain}/account`)));
 
 program.parse();
