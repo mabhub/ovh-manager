@@ -78,6 +78,71 @@ const maskSecretsInLog = (input) => {
   return str;
 }
 
+/**
+ * Format redirections for output in different formats (table, json, csv).
+ * @param {Array} redirections - Array of redirection objects
+ * @param {string} format - Output format: 'table' (default), 'json', or 'csv'
+ * @returns {string} - Formatted output
+ */
+const formatOutput = (redirections, format = 'table') => {
+  if (format === 'json') {
+    return JSON.stringify(redirections, null, 2);
+  }
+  if (format === 'csv') {
+    const headers = ['id', 'from', 'to'];
+    const rows = redirections.map(({ id, from, to }) => [
+      `"${id}"`,
+      `"${from}"`,
+      `"${to}"`,
+    ]);
+    return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  }
+  // Default: table format
+  const output = new Table({
+    head: ['id', 'from', 'to'],
+  });
+  output.push(...redirections.map(({ id, from, to }) => [
+    chalk.gray(id),
+    { content: prettyMail(from), hAlign: 'right' },
+    { content: prettyMail(to), hAlign: 'right' },
+  ]));
+  return output.toString();
+};
+
+/**
+ * Sort redirections by column and direction.
+ * @param {Array} redirections - Array of redirection objects
+ * @param {string} sortBy - Column to sort by: 'from', 'to', or 'id' (default: 'from')
+ * @param {string} order - Sort order: 'asc' (default) or 'desc'
+ * @returns {Array} - Sorted redirections
+ */
+const sortRedirections = (redirections, sortBy = 'from', order = 'asc') => {
+  const validColumns = ['from', 'to', 'id'];
+  const col = validColumns.includes(sortBy) ? sortBy : 'from';
+  const sorted = [...redirections].sort((a, b) => {
+    const aVal = String(a[col]);
+    const bVal = String(b[col]);
+    return aVal.localeCompare(bVal);
+  });
+  return order === 'desc' ? sorted.reverse() : sorted;
+};
+
+/**
+ * Filter redirections by search string across all fields (id, from, to).
+ * @param {Array} redirections - Array of redirection objects
+ * @param {string} searchStr - String to search for (case-insensitive)
+ * @returns {Array} - Filtered redirections
+ */
+const filterRedirections = (redirections, searchStr) => {
+  if (!searchStr) return redirections;
+  const query = searchStr.toLowerCase();
+  return redirections.filter(({ id, from, to }) =>
+    id.toLowerCase().includes(query) ||
+    from.toLowerCase().includes(query) ||
+    to.toLowerCase().includes(query)
+  );
+};
+
 const basePath = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: `${basePath}/.env.local` });
 
@@ -158,24 +223,13 @@ const prettyMail = str => {
     return chalk.red(str);
   }
 
-  const { 0: full, 1: left, 2: right } = str.match(/(.*)@(.*)/);
+  const { 0: _full, 1: left, 2: right } = str.match(/(.*)@(.*)/);
   return `${left}${chalk.gray(`@${right}`)}`;
 };
 
-const listRedirections = async (filterFn = () => true) => {
-  const output = new Table({
-    head: ['id', 'from', 'to'],
-  });
-
-  output.push(...cache[domain].redirections
-    .filter(filterFn)
-    .map(({ id, from, to }) => [
-      chalk.gray(id),
-      { content: prettyMail(from), hAlign: 'right' },
-      { content: prettyMail(to), hAlign: 'right' },
-    ]));
-
-  console.log(output.toString());
+const listRedirections = (redirections, format = 'table') => {
+  const output = formatOutput(redirections, format);
+  console.log(output);
 };
 
 const deleteRedir = async (...ids) => {
@@ -232,10 +286,29 @@ redir
   .command('list')
   .description('List all cached redirections')
   .option('-u, --update', 'Update before displaying redirections')
-  .option('-s, --no-spam', 'Hide spam redirections')
-  .action(async ({ update, spam }) => {
-    update && await updateRedirections();
-    await listRedirections(({ to }) => spam || to !== `spam@${domain}`);
+  .option('--no-spam', 'Hide spam redirections')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .option('-s, --sort <column>', 'Sort by column: from, to, or id (default: from)')
+  .option('-r, --reverse', 'Reverse sort order')
+  .option('-q, --search <query>', 'Filter results by search query')
+  .action(async ({ update, spam, format, sort, reverse, search }) => {
+    if (update) {
+      await updateRedirections();
+    }
+    let results = cache[domain].redirections;
+    // Apply spam filter
+    if (spam) {
+      results = results.filter(({ to }) => to !== `spam@${domain}`);
+    }
+    // Apply search filter
+    if (search) {
+      results = filterRedirections(results, search);
+    }
+    // Apply sorting
+    const sortOrder = reverse ? 'desc' : 'asc';
+    results = sortRedirections(results, sort || 'from', sortOrder);
+    // Display results
+    listRedirections(results, format || 'table');
   });
 
 redir
