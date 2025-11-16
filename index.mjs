@@ -14,6 +14,70 @@ import Table from 'cli-table3';
 import chalk from 'chalk';
 import { Command } from 'commander';
 
+/**
+ * Validate and sanitize a CLI argument (local part, email or id).
+ * Throws an Error if invalid.
+ * @param {string} value - The CLI argument to validate.
+ * @param {'localOrEmail'|'email'|'id'} type - The expected type of the argument.
+ * @returns {string} - The sanitized value.
+ * @throws {Error} - If the value is invalid.
+ * @author Copilot
+ */
+const validateCliArg = (value, type) => {
+  if (typeof value !== 'string') {
+    throw new Error('Invalid argument: value must be a string.');
+  }
+  const trimmed = value.trim();
+  if (type === 'id') {
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error('Invalid id: must be a positive integer.');
+    }
+    return trimmed;
+  }
+  if (type === 'email') {
+    // Simple RFC5322-like email validation
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      throw new Error('Invalid email address.');
+    }
+    return trimmed;
+  }
+  if (type === 'localOrEmail') {
+    // Accept local part (no @) or full email
+    if (/^[^@\s]+$/.test(trimmed)) {
+      return trimmed;
+    }
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      return trimmed;
+    }
+    throw new Error('Invalid local part or email address.');
+  }
+  throw new Error('Unknown validation type.');
+}
+
+/**
+ * Mask sensitive values (API keys, secrets, tokens) in any object or string for logging.
+ * @param {any} input - The value to sanitize for logs.
+ * @returns {any} - The sanitized value.
+ * @author Copilot
+ */
+const maskSecretsInLog = (input) => {
+  const secrets = [
+    process.env.APP_KEY,
+    process.env.APP_SECRET,
+    process.env.CONSUMER_KEY,
+    process.env.DEFAULT_TO,
+  ].filter(Boolean);
+  let str = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+  for (const secret of secrets) {
+    if (secret && typeof secret === 'string' && secret.length > 4) {
+      // Only mask if the secret is not trivial
+      const safe = '[REDACTED]';
+      str = str.split(secret).join(safe);
+    }
+  }
+  return str;
+}
+
 const basePath = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: `${basePath}/.env.local` });
 
@@ -52,7 +116,7 @@ if (!cache[domain]) {
 }
 
 const getMe = () => ovhRequest('GET', '/me');
-const summary = await ovhRequest('GET', `/email/domain/${domain}/summary`);
+// const summary = await ovhRequest('GET', `/email/domain/${domain}/summary`);
 
 const redirByFrom = str => cache[domain].redirections.find(({ from }) => [str, `${str}@${domain}`].includes(from)) || {};
 
@@ -258,67 +322,3 @@ process.on('uncaughtException', (err) => {
     console.error('[DEBUG] Technical detail (uncaughtException):', maskSecretsInLog(err));
   }
 });
-
-/**
- * Validate and sanitize a CLI argument (local part, email or id).
- * Throws an Error if invalid.
- * @param {string} value - The CLI argument to validate.
- * @param {'localOrEmail'|'email'|'id'} type - The expected type of the argument.
- * @returns {string} - The sanitized value.
- * @throws {Error} - If the value is invalid.
- * @author Copilot
- */
-const validateCliArg = (value, type) => {
-  if (typeof value !== 'string') {
-    throw new Error('Invalid argument: value must be a string.');
-  }
-  const trimmed = value.trim();
-  if (type === 'id') {
-    if (!/^\d+$/.test(trimmed)) {
-      throw new Error('Invalid id: must be a positive integer.');
-    }
-    return trimmed;
-  }
-  if (type === 'email') {
-    // Simple RFC5322-like email validation
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-      throw new Error('Invalid email address.');
-    }
-    return trimmed;
-  }
-  if (type === 'localOrEmail') {
-    // Accept local part (no @) or full email
-    if (/^[^@\s]+$/.test(trimmed)) {
-      return trimmed;
-    }
-    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-      return trimmed;
-    }
-    throw new Error('Invalid local part or email address.');
-  }
-  throw new Error('Unknown validation type.');
-}
-
-/**
- * Mask sensitive values (API keys, secrets, tokens) in any object or string for logging.
- * @param {any} input - The value to sanitize for logs.
- * @returns {any} - The sanitized value.
- * @author Copilot
- */
-const maskSecretsInLog = (input) => {
-  const secrets = [
-    process.env.APP_KEY,
-    process.env.APP_SECRET,
-    process.env.CONSUMER_KEY,
-    process.env.DEFAULT_TO,
-  ].filter(Boolean);
-  let str = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
-  for (const secret of secrets) {
-    if (secret && typeof secret === 'string' && secret.length > 4) {
-      // Only mask if the secret is not trivial
-      const safe = '[REDACTED]';
-      str = str.split(secret).join(safe);
-    }
-  }
-  return str;
-}
