@@ -287,6 +287,59 @@ const changeRedir = async (id, to) => {
   }
 };
 
+/**
+ * Retrieve DNS zone information.
+ * @param {string} zoneName - The zone domain name
+ * @returns {Promise<Object>} - Zone information (name, dnssecSupported, hasDnsAnycast, lastUpdate, nameServers)
+ * @throws {Error} - If the API request fails
+ */
+const getDnsZone = async (zoneName) => {
+  const zoneInfo = await ovhRequest('GET', `/domain/zone/${zoneName}`);
+  return {
+    name: zoneInfo.name || zoneName,
+    dnssecSupported: zoneInfo.dnssecSupported || false,
+    hasDnsAnycast: zoneInfo.hasDnsAnycast || false,
+    lastUpdate: zoneInfo.lastUpdate || 'N/A',
+    nameServers: zoneInfo.nameServers ? zoneInfo.nameServers.join(', ') : 'N/A',
+  };
+};
+
+/**
+ * Retrieve all DNS records for a zone with their details.
+ * @param {string} zoneName - The zone domain name
+ * @returns {Promise<Array>} - Array of record objects (id, subDomain, fieldType, target, ttl)
+ * @throws {Error} - If the API request fails
+ */
+const getDnsRecords = async (zoneName) => {
+  const recordIds = await ovhRequest('GET', `/domain/zone/${zoneName}/record`);
+  if (!recordIds || recordIds.length === 0) {
+    return [];
+  }
+  const recordDetails = await Promise.all(
+    recordIds.map(async (recordId) => {
+      try {
+        const record = await ovhRequest('GET', `/domain/zone/${zoneName}/record/${recordId}`);
+        return {
+          id: record.id || recordId,
+          subDomain: record.subDomain || '@',
+          fieldType: record.fieldType || 'N/A',
+          target: record.target || 'N/A',
+          ttl: record.ttl || 'N/A',
+        };
+      } catch {
+        return {
+          id: recordId,
+          subDomain: 'error',
+          fieldType: 'error',
+          target: 'error',
+          ttl: 'N/A',
+        };
+      }
+    })
+  );
+  return recordDetails;
+};
+
 const createRedir = async (from, to) => {
   if (from && to) {
     const response = await ovhRequest(
@@ -518,6 +571,49 @@ domainCmd
       console.log(output);
     } catch (err) {
       console.error('Failed to list nameservers:', err.message);
+    }
+  });
+
+domainCmd
+  .command('zone:info <zoneName>')
+  .description('Display DNS zone information')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .action(async (zoneName, { format }) => {
+    try {
+      const zoneInfo = await getDnsZone(zoneName);
+      const output = formatOutput([zoneInfo], format || 'table');
+      console.log(output);
+    } catch (err) {
+      console.error('Failed to retrieve zone information:', err.message);
+    }
+  });
+
+domainCmd
+  .command('zone:records <zoneName>')
+  .description('List all DNS records for a zone')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .option('--filter <type>', 'Filter records by type (e.g., A, MX, CNAME, TXT)')
+  .action(async (zoneName, { format, filter }) => {
+    try {
+      let records = await getDnsRecords(zoneName);
+      if (!records || records.length === 0) {
+        console.log('No records found.');
+        return;
+      }
+      // Apply type filter if specified
+      if (filter) {
+        records = records.filter(({ fieldType }) =>
+          fieldType.toUpperCase() === filter.toUpperCase()
+        );
+        if (records.length === 0) {
+          console.log(`No records found for type: ${filter}`);
+          return;
+        }
+      }
+      const output = formatOutput(records, format || 'table');
+      console.log(output);
+    } catch (err) {
+      console.error('Failed to list zone records:', err.message);
     }
   });
 
