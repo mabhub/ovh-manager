@@ -79,12 +79,48 @@ const maskSecretsInLog = (input) => {
 }
 
 /**
- * Format redirections for output in different formats (table, json, csv).
+ * Format data for output in different formats (table, json, csv).
+ * @param {Array} data - Array of objects to format
+ * @param {string} format - Output format: 'table' (default), 'json', or 'csv'
+ * @param {Array} columns - Column names for table/csv (auto-detect if not provided)
+ * @returns {string} - Formatted output
+ */
+const formatOutput = (data, format = 'table', columns = null) => {
+  if (!data || data.length === 0) {
+    return format === 'json' ? '[]' : '';
+  }
+
+  if (format === 'json') {
+    return JSON.stringify(data, null, 2);
+  }
+
+  // Auto-detect columns from first object if not provided
+  const cols = columns || Object.keys(data[0]);
+
+  if (format === 'csv') {
+    const rows = data.map(item =>
+      cols.map(col => `"${item[col] || 'N/A'}"`)
+    );
+    return [cols.join(','), ...rows.map(r => r.join(','))].join('\n');
+  }
+
+  // Default: table format
+  const output = new Table({
+    head: cols.map(col => chalk.cyan(col)),
+  });
+  output.push(...data.map(item =>
+    cols.map(col => item[col] || 'N/A')
+  ));
+  return output.toString();
+};
+
+/**
+ * Format redirections with special styling (colors, alignment).
  * @param {Array} redirections - Array of redirection objects
  * @param {string} format - Output format: 'table' (default), 'json', or 'csv'
  * @returns {string} - Formatted output
  */
-const formatOutput = (redirections, format = 'table') => {
+const formatRedirections = (redirections, format = 'table') => {
   if (format === 'json') {
     return JSON.stringify(redirections, null, 2);
   }
@@ -97,7 +133,7 @@ const formatOutput = (redirections, format = 'table') => {
     ]);
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
-  // Default: table format
+  // Default: table format with styling
   const output = new Table({
     head: ['id', 'from', 'to'],
   });
@@ -228,7 +264,7 @@ const prettyMail = str => {
 };
 
 const listRedirections = (redirections, format = 'table') => {
-  const output = formatOutput(redirections, format);
+  const output = formatRedirections(redirections, format);
   console.log(output);
 };
 
@@ -377,6 +413,113 @@ program
 program
   .command('quota')
   .action(async () => console.log(await ovhRequest('GET', `/email/domain/${domain}/account`)));
+
+const domainCmd = program
+  .command('domain')
+  .description('Manage domain services');
+
+domainCmd
+  .command('list')
+  .description('List all accessible domains')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .action(async ({ format }) => {
+    try {
+      const domains = await ovhRequest('GET', '/domain');
+      if (!domains || domains.length === 0) {
+        console.log('No domains found.');
+        return;
+      }
+      // Fetch detailed info for each domain
+      const domainDetails = await Promise.all(
+        domains.map(async (domainName) => {
+          try {
+            const info = await ovhRequest('GET', `/domain/${domainName}`);
+            return {
+              name: domainName,
+              status: info.state || 'unknown',
+              ownerContact: info.ownerContact || 'N/A',
+              expirationDate: info.expirationDate || 'N/A',
+            };
+          } catch {
+            return {
+              name: domainName,
+              status: 'error',
+              ownerContact: 'N/A',
+              expirationDate: 'N/A',
+            };
+          }
+        })
+      );
+      // Format output
+      const output = formatOutput(domainDetails, format || 'table');
+      console.log(output);
+    } catch (err) {
+      console.error('Failed to list domains:', err.message);
+    }
+  });
+
+domainCmd
+  .command('contacts <_domainName>')
+  .description('Manage contacts for a domain')
+  .action(() => {
+    // This will be handled by subcommands
+  });
+
+domainCmd
+  .command('contacts:list <domainName>')
+  .description('List all contacts for a domain')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .action(async (domainName, { format }) => {
+    try {
+      const response = await ovhRequest('GET', `/domain/${domainName}`);
+      const contactInfo = {
+        Admin: response.adminContact || 'N/A',
+        Billing: response.billingContact || 'N/A',
+        Owner: response.ownerContact || 'N/A',
+        Tech: response.techContact || 'N/A',
+      };
+      const output = formatOutput([contactInfo], format || 'table');
+      console.log(output);
+    } catch (err) {
+      console.error('Failed to list contacts:', err.message);
+    }
+  });
+
+domainCmd
+  .command('dns:list <domainName>')
+  .description('List nameservers for a domain')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .action(async (domainName, { format }) => {
+    try {
+      const nameServers = await ovhRequest('GET', `/domain/${domainName}/nameServer`);
+      if (!nameServers || nameServers.length === 0) {
+        console.log('No nameservers found.');
+        return;
+      }
+      const nsDetails = await Promise.all(
+        nameServers.map(async (nsId) => {
+          try {
+            const nsInfo = await ovhRequest('GET', `/domain/${domainName}/nameServer/${nsId}`);
+            return {
+              id: nsId,
+              host: nsInfo.host || 'N/A',
+              ip: nsInfo.ip || 'N/A',
+            };
+          } catch {
+            return {
+              id: nsId,
+              host: 'error',
+              ip: 'N/A',
+            };
+          }
+        })
+      );
+      const output = formatOutput(nsDetails, format || 'table');
+      console.log(output);
+    } catch (err) {
+      console.error('Failed to list nameservers:', err.message);
+    }
+  });
 
 program.parse();
 
