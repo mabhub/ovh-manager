@@ -570,6 +570,39 @@ redir
     }
   });
 
+redir
+  .command('modify')
+  .description('Modify the destination of an existing redirection')
+  .argument('<source>')
+  .argument('<newTo>')
+  .action(async (source, newTo) => {
+    try {
+      // Determine if source is an ID or email/local part
+      const isId = Number(source).toString() === source;
+      const sanitizedSource = isId
+        ? validateCliArg(source, 'id')
+        : validateCliArg(source, 'localOrEmail');
+      const sanitizedTo = validateCliArg(newTo, 'email');
+
+      // Find the redirection ID
+      const redirId = isId ? sanitizedSource : redirByFrom(sanitizedSource).id;
+
+      if (!redirId) {
+        console.error(`No redirection found for "${source}".`);
+        return;
+      }
+
+      // Perform the modification
+      await changeRedir(redirId, sanitizedTo);
+      console.log(`Redirection modified: ID ${redirId} → ${sanitizedTo}`);
+
+      // Update cache
+      await updateRedirections();
+    } catch (err) {
+      console.error('Failed to modify redirection:', err.message);
+    }
+  });
+
 program
   .command('status')
   .description('Account informations')
@@ -637,7 +670,7 @@ domainCmd
   .action(async (domainName, { format }) => {
     try {
       const response = await ovhRequest('GET', `/domain/${domainName}`);
-      
+
       // Fetch formatted contact names asynchronously
       const [adminFormatted, billingFormatted, ownerFormatted, techFormatted] = await Promise.all([
         formatContactId(response.contactAdmin?.id),
@@ -645,14 +678,14 @@ domainCmd
         formatContactId(response.contactOwner?.id),
         formatContactId(response.contactTech?.id),
       ]);
-      
+
       const contactInfo = {
         Admin: adminFormatted,
         Billing: billingFormatted,
         Owner: ownerFormatted,
         Tech: techFormatted,
       };
-      
+
       const output = formatOutput([contactInfo], format || 'table');
       console.log(output);
     } catch (err) {
