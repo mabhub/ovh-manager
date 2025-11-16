@@ -79,6 +79,19 @@ const maskSecretsInLog = (input) => {
 }
 
 /**
+ * Truncate text to fit terminal width, respecting column count.
+ * @param {string} text - Text to truncate
+ * @param {number} maxWidth - Maximum width for this cell
+ * @returns {string} - Truncated text with ellipsis if needed
+ */
+const truncateCell = (text, maxWidth) => {
+  if (!text) return 'N/A';
+  const str = String(text);
+  if (str.length <= maxWidth) return str;
+  return str.substring(0, Math.max(1, maxWidth - 3)) + '...';
+};
+
+/**
  * Format data for output in different formats (table, json, csv).
  * @param {Array} data - Array of objects to format
  * @param {string} format - Output format: 'table' (default), 'json', or 'csv'
@@ -104,13 +117,52 @@ const formatOutput = (data, format = 'table', columns = null) => {
     return [cols.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
 
-  // Default: table format
+  // Default: table format with smart truncation
+  const terminalWidth = process.stdout.columns || 120;
+
+  // Calculate if truncation is needed
+  let needsTruncation = false;
+  let estimatedWidth = 0;
+  const estimatedColWidths = {};
+
+  for (const col of cols) {
+    let maxLen = col.length;
+    for (const item of data) {
+      const val = String(item[col] || 'N/A');
+      maxLen = Math.max(maxLen, val.length);
+    }
+    estimatedColWidths[col] = maxLen;
+    estimatedWidth += maxLen;
+  }
+  estimatedWidth += cols.length + 1 + (cols.length * 2); // Borders + padding
+
+  if (estimatedWidth > terminalWidth) {
+    needsTruncation = true;
+  }
+
+  // Prepare rows: truncate if necessary
+  const processedData = data.map(item => {
+    const row = {};
+    for (const col of cols) {
+      const val = item[col];
+      if (needsTruncation && estimatedColWidths[col] > 30) {
+        // Only truncate large columns
+        row[col] = truncateCell(val, Math.min(estimatedColWidths[col], 45));
+      } else {
+        row[col] = val || 'N/A';
+      }
+    }
+    return row;
+  });
+
   const output = new Table({
     head: cols.map(col => chalk.cyan(col)),
   });
-  output.push(...data.map(item =>
+
+  output.push(...processedData.map(item =>
     cols.map(col => item[col] || 'N/A')
   ));
+
   return output.toString();
 };
 
@@ -133,15 +185,39 @@ const formatRedirections = (redirections, format = 'table') => {
     ]);
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
-  // Default: table format with styling
+  // Default: table format with styling and smart truncation
+  const cols = ['id', 'from', 'to'];
+  const terminalWidth = process.stdout.columns || 120;
+
+  // Check if truncation is needed
+  let needsTruncation = false;
+  const estimatedColWidths = {};
+
+  for (const col of cols) {
+    let maxLen = col.length;
+    for (const redir of redirections) {
+      const val = String(redir[col] || 'N/A');
+      maxLen = Math.max(maxLen, val.length);
+    }
+    estimatedColWidths[col] = maxLen;
+  }
+  let estimatedWidth = Object.values(estimatedColWidths).reduce((a, b) => a + b, 0);
+  estimatedWidth += cols.length + 1 + (cols.length * 2);
+
+  if (estimatedWidth > terminalWidth) {
+    needsTruncation = true;
+  }
+
   const output = new Table({
-    head: ['id', 'from', 'to'],
+    head: cols.map(col => chalk.cyan(col)),
   });
+
   output.push(...redirections.map(({ id, from, to }) => [
-    chalk.gray(id),
-    { content: prettyMail(from), hAlign: 'right' },
-    { content: prettyMail(to), hAlign: 'right' },
+    { content: chalk.gray(needsTruncation && estimatedColWidths.id > 15 ? truncateCell(id, 12) : id), hAlign: 'left' },
+    { content: prettyMail(needsTruncation ? truncateCell(from, 30) : from), hAlign: 'right' },
+    { content: prettyMail(needsTruncation ? truncateCell(to, 30) : to), hAlign: 'right' },
   ]));
+
   return output.toString();
 };
 
@@ -259,7 +335,13 @@ const prettyMail = str => {
     return chalk.red(str);
   }
 
-  const { 0: _full, 1: left, 2: right } = str.match(/(.*)@(.*)/);
+  const match = str.match(/(.*)@(.*)/);
+  if (!match) {
+    // Handle truncated or malformed email
+    return str;
+  }
+
+  const { 0: _full, 1: left, 2: right } = match;
   return `${left}${chalk.gray(`@${right}`)}`;
 };
 
