@@ -452,6 +452,108 @@ const formatContactId = async (contactId) => {
   return contactId;
 };
 
+/**
+ * Retrieve quota usage for the email domain.
+ * @returns {Promise<Object>} - Quota object with max and used values
+ */
+const getQuotaUsage = async () => {
+  const [quota, summary] = await Promise.all([
+    ovhRequest('GET', `/email/domain/${domain}/quota`),
+    ovhRequest('GET', `/email/domain/${domain}/summary`),
+  ]);
+
+  return {
+    account: {
+      max: quota.account || 0,
+      used: summary.account || 0,
+    },
+    alias: {
+      max: quota.alias || 0,
+      used: summary.account || 0, // Note: summary doesn't have alias count
+    },
+    mailingList: {
+      max: quota.mailingList || 0,
+      used: summary.mailingList || 0,
+    },
+    redirection: {
+      max: quota.redirection || 0,
+      used: summary.redirection || 0,
+    },
+    responder: {
+      max: quota.responder || 0,
+      used: summary.responder || 0,
+    },
+  };
+};
+
+/**
+ * Get detailed usage per account.
+ * @returns {Promise<Array>} - Array of account usage objects
+ */
+const getAccountsUsage = async () => {
+  try {
+    const accounts = await ovhRequest('GET', `/email/domain/${domain}/account`);
+    if (!accounts || accounts.length === 0) {
+      return [];
+    }
+
+    const accountsUsage = await Promise.all(
+      accounts.map(async (accountName) => {
+        try {
+          const account = await ovhRequest('GET', `/email/domain/${domain}/account/${accountName}`);
+          const usage = await ovhRequest('GET', `/email/domain/${domain}/account/${accountName}/usage`);
+
+          // Calculate usage percentage safely
+          let usagePercent = 'N/A';
+          if (usage.quota && usage.quota.max && usage.quota.max > 0) {
+            usagePercent = `${((usage.quota.current || 0) / usage.quota.max * 100).toFixed(1)}%`;
+          }
+
+          return {
+            accountName,
+            description: account.description || 'N/A',
+            size: account.size || 0,
+            email: account.email || 'N/A',
+            usage: usagePercent,
+            quotaUsed: usage.quota?.current || 0,
+            quotaMax: usage.quota?.max || 0,
+          };
+        } catch {
+          return {
+            accountName,
+            description: 'error',
+            size: 0,
+            email: 'error',
+            usage: 'N/A',
+            quotaUsed: 0,
+            quotaMax: 0,
+          };
+        }
+      })
+    );
+
+    return accountsUsage;
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Create a progress bar visualization.
+ * @param {number} used - Used amount
+ * @param {number} max - Maximum amount
+ * @param {number} width - Bar width (default: 10)
+ * @returns {string} - Progress bar with percentage
+ */
+const createProgressBar = (used, max, width = 10) => {
+  if (!max || max === 0) return '0%    ░░░░░░░░░░';
+  const percent = Math.round((used / max) * 100);
+  const filled = Math.round((percent / 100) * width);
+  const empty = width - filled;
+  const bar = '▓'.repeat(filled) + '░'.repeat(empty);
+  return `${percent.toString().padStart(3)}%  ${bar}`;
+};
+
 const createRedir = async (from, to) => {
   if (from && to) {
     const response = await ovhRequest(
@@ -610,7 +712,142 @@ program
 
 program
   .command('quota')
-  .action(async () => console.log(await ovhRequest('GET', `/email/domain/${domain}/account`)));
+  .description('Display quota usage for the email domain')
+  .option('-p, --per-account', 'Show usage per account')
+  .option('-s, --summary', 'Show compact summary format (used/max)')
+  .option('--simple', 'Show simple max values only')
+  .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
+  .action(async (options) => {
+    try {
+      const { perAccount: perAccountOpt, summary, simple, format } = options;
+
+      // Per-account view
+      if (perAccountOpt) {
+        const accountsUsage = await getAccountsUsage();
+        if (accountsUsage.length === 0) {
+          console.log('No accounts found.');
+          return;
+        }
+        const output = formatOutput(accountsUsage, format || 'table', ['accountName', 'description', 'usage']);
+        console.log(output);
+        return;
+      }
+
+      // Get quota data
+      const quotaData = await getQuotaUsage();
+
+      // Simple view (max values only)
+      if (simple) {
+        if (format === 'json') {
+          const simpleData = {
+            account: quotaData.account.max,
+            alias: quotaData.alias.max,
+            mailingList: quotaData.mailingList.max,
+            redirection: quotaData.redirection.max,
+            responder: quotaData.responder.max,
+          };
+          console.log(JSON.stringify(simpleData, null, 2));
+        } else if (format === 'csv') {
+          const headers = ['Resource', 'Max'];
+          const rows = [
+            ['Mailboxes', quotaData.account.max],
+            ['Aliases', quotaData.alias.max],
+            ['Mailing Lists', quotaData.mailingList.max],
+            ['Redirections', quotaData.redirection.max],
+            ['Responders', quotaData.responder.max],
+          ].map(([resource, max]) => [`"${resource}"`, max]);
+          console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
+        } else {
+          // Table format
+          const defaultData = [
+            { resource: 'Mailboxes', max: quotaData.account.max },
+            { resource: 'Aliases', max: quotaData.alias.max },
+            { resource: 'Mailing Lists', max: quotaData.mailingList.max },
+            { resource: 'Redirections', max: quotaData.redirection.max },
+            { resource: 'Responders', max: quotaData.responder.max },
+          ];
+          const output = formatOutput(defaultData, 'table', ['resource', 'max']);
+          console.log(output);
+        }
+        return;
+      }
+
+      // Summary view (compact)
+      if (summary) {
+        const summaryData = [
+          { resource: 'Mailboxes', usage: `${quotaData.account.used}/${quotaData.account.max}` },
+          { resource: 'Redirections', usage: `${quotaData.redirection.used}/${quotaData.redirection.max}` },
+          { resource: 'Mailing Lists', usage: `${quotaData.mailingList.used}/${quotaData.mailingList.max}` },
+          { resource: 'Responders', usage: `${quotaData.responder.used}/${quotaData.responder.max}` },
+        ];
+
+        if (format === 'json') {
+          console.log(JSON.stringify(summaryData, null, 2));
+        } else if (format === 'csv') {
+          const headers = ['Resource', 'Usage'];
+          const rows = summaryData.map(({ resource, usage }) => [`"${resource}"`, `"${usage}"`]);
+          console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
+        } else {
+          const output = formatOutput(summaryData, 'table', ['resource', 'usage']);
+          console.log(output);
+        }
+        return;
+      }
+
+      // Default: Detailed view with progress bars
+      const quotaDetails = [
+        {
+          type: 'Mailboxes',
+          used: quotaData.account.used,
+          max: quotaData.account.max,
+          progress: createProgressBar(quotaData.account.used, quotaData.account.max),
+        },
+        {
+          type: 'Aliases',
+          used: quotaData.alias.used,
+          max: quotaData.alias.max,
+          progress: createProgressBar(quotaData.alias.used, quotaData.alias.max),
+        },
+        {
+          type: 'Mailing Lists',
+          used: quotaData.mailingList.used,
+          max: quotaData.mailingList.max,
+          progress: createProgressBar(quotaData.mailingList.used, quotaData.mailingList.max),
+        },
+        {
+          type: 'Redirections',
+          used: quotaData.redirection.used,
+          max: quotaData.redirection.max,
+          progress: createProgressBar(quotaData.redirection.used, quotaData.redirection.max),
+        },
+        {
+          type: 'Responders',
+          used: quotaData.responder.used,
+          max: quotaData.responder.max,
+          progress: createProgressBar(quotaData.responder.used, quotaData.responder.max),
+        },
+      ];
+
+      if (format === 'json') {
+        console.log(JSON.stringify(quotaDetails, null, 2));
+      } else if (format === 'csv') {
+        const headers = ['Type', 'Used', 'Max', 'Usage'];
+        const rows = quotaDetails.map(({ type, used, max, progress }) => [
+          `"${type}"`,
+          used,
+          max,
+          `"${progress}"`,
+        ]);
+        console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
+      } else {
+        // Table format
+        const output = formatOutput(quotaDetails, 'table', ['type', 'used', 'max', 'progress']);
+        console.log(output);
+      }
+    } catch (err) {
+      console.error('Failed to retrieve quota information:', err.message);
+    }
+  });
 
 const domainCmd = program
   .command('domain')
