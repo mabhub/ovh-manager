@@ -387,7 +387,7 @@ const getDnsZone = async (zoneName) => {
 };
 
 /**
- * Retrieve all DNS records for a zone with their details.
+ * Retrieve DNS records for a zone with their details.
  * @param {string} zoneName - The zone domain name
  * @returns {Promise<Array>} - Array of record objects (id, subDomain, fieldType, target, ttl)
  * @throws {Error} - If the API request fails
@@ -420,6 +420,36 @@ const getDnsRecords = async (zoneName) => {
     })
   );
   return recordDetails;
+};
+
+/**
+ * Format a contact identifier for display.
+ * For numeric IDs, fetch name and format as "FirstName LastName (ID)".
+ * For non-numeric handles, return as-is.
+ * @param {string} contactId - Contact ID or account handle
+ * @returns {Promise<string>} - Formatted contact string
+ */
+const formatContactId = async (contactId) => {
+  if (!contactId || contactId === 'N/A') {
+    return 'N/A';
+  }
+
+  // Check if it's a numeric ID (not a handle like 'mb135-ovh')
+  if (/^\d+$/.test(contactId)) {
+    try {
+      const contactInfo = await ovhRequest('GET', `/me/contact/${contactId}`);
+      if (contactInfo.firstName && contactInfo.lastName) {
+        return `${contactInfo.firstName} ${contactInfo.lastName} (${contactId})`;
+      }
+      return contactId;
+    } catch {
+      // If fetch fails, return the ID
+      return contactId;
+    }
+  }
+
+  // Return account handles as-is
+  return contactId;
 };
 
 const createRedir = async (from, to) => {
@@ -607,12 +637,22 @@ domainCmd
   .action(async (domainName, { format }) => {
     try {
       const response = await ovhRequest('GET', `/domain/${domainName}`);
+      
+      // Fetch formatted contact names asynchronously
+      const [adminFormatted, billingFormatted, ownerFormatted, techFormatted] = await Promise.all([
+        formatContactId(response.contactAdmin?.id),
+        formatContactId(response.contactBilling?.id),
+        formatContactId(response.contactOwner?.id),
+        formatContactId(response.contactTech?.id),
+      ]);
+      
       const contactInfo = {
-        Admin: response.adminContact || 'N/A',
-        Billing: response.billingContact || 'N/A',
-        Owner: response.ownerContact || 'N/A',
-        Tech: response.techContact || 'N/A',
+        Admin: adminFormatted,
+        Billing: billingFormatted,
+        Owner: ownerFormatted,
+        Tech: techFormatted,
       };
+      
       const output = formatOutput([contactInfo], format || 'table');
       console.log(output);
     } catch (err) {
