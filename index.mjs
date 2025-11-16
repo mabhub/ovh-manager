@@ -105,9 +105,12 @@ const accessRules = [
 
 let cache = {};
 try {
-  cache = JSON.parse(await fs.readFile(`${basePath}/cache.json`));
+  const cacheContent = await fs.readFile(`${basePath}/cache.json`, 'utf-8');
+  cache = JSON.parse(cacheContent);
 } catch (err) {
-  console.error(err);
+  if (err.code !== 'ENOENT') {
+    console.error('Warning: Failed to read cache.json:', err.message);
+  }
 }
 if (!cache[domain]) {
   cache[domain] = {
