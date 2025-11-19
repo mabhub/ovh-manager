@@ -636,8 +636,50 @@ redir
   .argument('[to]')
   .action(async (from, to) => {
     try {
+      // Check if 'from' contains the domain when it shouldn't
+      if (from && from.includes('@')) {
+        const fromDomain = from.split('@')[1];
+        if (fromDomain === domain) {
+          const localPart = from.split('@')[0];
+          console.error(chalk.yellow(`⚠️  You provided a full email address with domain: ${chalk.bold(from)}`));
+          console.error(chalk.yellow(`    For this command, only the local part is needed.\n`));
+
+          // Interactive prompt using simple stdin read
+          const readline = await import('readline');
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+          });
+
+          const answer = await new Promise((resolve) => {
+            rl.question(
+              chalk.cyan(`Do you want to create redirection for "${chalk.bold(localPart)}" instead? (y/N): `),
+              (ans) => {
+                rl.close();
+                resolve(ans);
+              }
+            );
+          });
+
+          if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
+            from = localPart;
+            console.log(chalk.green(`✓ Using local part: ${localPart}\n`));
+          } else {
+            console.log(chalk.gray('Operation cancelled.'));
+            return;
+          }
+        }
+      }
+
       const fromSanitized = validateCliArg(from, 'localOrEmail');
       const toSanitized = to ? validateCliArg(to, 'email') : undefined;
+
+      if (!to && !process.env.DEFAULT_TO) {
+        console.error(chalk.red('Error: No destination specified and DEFAULT_TO not configured.'));
+        console.error(chalk.gray('Either provide a destination email or configure DEFAULT_TO in .env.local'));
+        return;
+      }
+
       if (toSanitized) {
         await createRedir(fromSanitized, toSanitized);
       } else {
@@ -645,7 +687,7 @@ redir
       }
       await updateRedirections();
     } catch (err) {
-      console.error('Invalid argument:', err.message);
+      console.error(chalk.red('Error creating redirection:'), err.message);
     }
   });
 
