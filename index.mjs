@@ -271,7 +271,10 @@ const ovh = OVH({
   consumerKey: process.env.CONSUMER_KEY,
 });
 
-const domain = process.env.DOMAIN;
+// Use an object to allow mutable reference in closures
+const domainConfig = {
+  current: process.env.DOMAIN
+};
 
 const accessRules = [
   { 'method': 'GET', 'path': '/*'},
@@ -289,37 +292,46 @@ try {
     console.error('Warning: Failed to read cache.json:', err.message);
   }
 }
-if (!cache[domain]) {
-  cache[domain] = {
-    redirections: [],
-  };
-}
+
+/**
+ * Ensure cache for a domain exists
+ * @param {string} domainName - Domain name
+ */
+const ensureCacheForDomain = (domainName) => {
+  if (!cache[domainName]) {
+    cache[domainName] = {
+      redirections: [],
+    };
+  }
+};
+
+ensureCacheForDomain(domainConfig.current);
 
 const getMe = () => ovhRequest('GET', '/me');
-// const summary = await ovhRequest('GET', `/email/domain/${domain}/summary`);
+// const summary = await ovhRequest('GET', `/email/domain/${domainConfig.current}/summary`);
 
-const redirByFrom = str => cache[domain].redirections.find(({ from }) => [str, `${str}@${domain}`].includes(from)) || {};
+const redirByFrom = str => cache[domainConfig.current].redirections.find(({ from }) => [str, `${str}@${domainConfig.current}`].includes(from)) || {};
 
 /**
  * Met à jour cache.json en ajoutant les nouvelles redirections,
  * et en en supprimant celles n'existant plus.
  */
 const updateRedirections = async () => {
-  const allRedirIds = await ovhRequest('GET', `/email/domain/${domain}/redirection`);
-  const existingRedirIds = cache[domain].redirections.map(({ id }) => id);
+  const allRedirIds = await ovhRequest('GET', `/email/domain/${domainConfig.current}/redirection`);
+  const existingRedirIds = cache[domainConfig.current].redirections.map(({ id }) => id);
 
   const newRedirIds = allRedirIds.filter(rId => !existingRedirIds.includes(rId));
   const newRedirections = [];
 
   for await (const redirectionId of newRedirIds) {
-    const details = await ovhRequest('GET', `/email/domain/${domain}/redirection/${redirectionId}`);
+    const details = await ovhRequest('GET', `/email/domain/${domainConfig.current}/redirection/${redirectionId}`);
     newRedirections.push(details);
   }
 
   const deletedRedirIds = existingRedirIds.filter(id => !allRedirIds.includes(id));
 
-  cache[domain].redirections = [
-    ...cache[domain].redirections.filter(({ id }) => !deletedRedirIds.includes(id)),
+  cache[domainConfig.current].redirections = [
+    ...cache[domainConfig.current].redirections.filter(({ id }) => !deletedRedirIds.includes(id)),
     ...newRedirections,
   ].sort(({ from: a }, { from: b }) => a.localeCompare(b));
 
@@ -331,7 +343,7 @@ const updateRedirections = async () => {
 };
 
 const prettyMail = str => {
-  if (str === `spam@${domain}`) {
+  if (str === `spam@${domainConfig.current}`) {
     return chalk.red(str);
   }
 
@@ -353,7 +365,7 @@ const listRedirections = (redirections, format = 'table') => {
 const deleteRedir = async (...ids) => {
   if (ids && ids.length) {
     for await (const id of ids) {
-      await ovhRequest('DELETE', `/email/domain/${domain}/redirection/${id}`);
+      await ovhRequest('DELETE', `/email/domain/${domainConfig.current}/redirection/${id}`);
     }
   }
 };
@@ -362,7 +374,7 @@ const changeRedir = async (id, to) => {
   if (id && to) {
     const response = await ovhRequest(
       'POST',
-      `/email/domain/${domain}/redirection/${id}/changeRedirection`,
+      `/email/domain/${domainConfig.current}/redirection/${id}/changeRedirection`,
       { to },
     );
     console.log(response);
@@ -458,8 +470,8 @@ const formatContactId = async (contactId) => {
  */
 const getQuotaUsage = async () => {
   const [quota, summary] = await Promise.all([
-    ovhRequest('GET', `/email/domain/${domain}/quota`),
-    ovhRequest('GET', `/email/domain/${domain}/summary`),
+    ovhRequest('GET', `/email/domain/${domainConfig.current}/quota`),
+    ovhRequest('GET', `/email/domain/${domainConfig.current}/summary`),
   ]);
 
   return {
@@ -492,7 +504,7 @@ const getQuotaUsage = async () => {
  */
 const getAccountsUsage = async () => {
   try {
-    const accounts = await ovhRequest('GET', `/email/domain/${domain}/account`);
+    const accounts = await ovhRequest('GET', `/email/domain/${domainConfig.current}/account`);
     if (!accounts || accounts.length === 0) {
       return [];
     }
@@ -500,8 +512,8 @@ const getAccountsUsage = async () => {
     const accountsUsage = await Promise.all(
       accounts.map(async (accountName) => {
         try {
-          const account = await ovhRequest('GET', `/email/domain/${domain}/account/${accountName}`);
-          const usage = await ovhRequest('GET', `/email/domain/${domain}/account/${accountName}/usage`);
+          const account = await ovhRequest('GET', `/email/domain/${domainConfig.current}/account/${accountName}`);
+          const usage = await ovhRequest('GET', `/email/domain/${domainConfig.current}/account/${accountName}/usage`);
 
           // Calculate usage percentage safely
           let usagePercent = 'N/A';
@@ -558,7 +570,7 @@ const createRedir = async (from, to) => {
   if (from && to) {
     const response = await ovhRequest(
       'POST',
-      `/email/domain/${domain}/redirection`,
+      `/email/domain/${domainConfig.current}/redirection`,
       { from, to, localCopy: false },
     );
     console.log(response);
@@ -566,7 +578,7 @@ const createRedir = async (from, to) => {
 };
 
 const createDefaultRedir = str => createRedir(
-  `${str}@${domain}`,
+  `${str}@${domainConfig.current}`,
   process.env.DEFAULT_TO.replace(/\{\{alias\}\}/g, str),
 
 );
@@ -575,7 +587,15 @@ const program = new Command();
 
 program
   .name('ovh')
-  .description('OVH cli manager');
+  .description('OVH cli manager')
+  .option('-d, --domain <domain>', 'Override default domain from .env.local')
+  .hook('preAction', (thisCommand) => {
+    const opts = thisCommand.optsWithGlobals();
+    if (opts.domain) {
+      domainConfig.current = opts.domain;
+      ensureCacheForDomain(domainConfig.current);
+    }
+  });
 
 program
   .command('auth') // https://www.ovh.com/auth/api/createApp
@@ -598,10 +618,10 @@ redir
     if (update) {
       await updateRedirections();
     }
-    let results = cache[domain].redirections;
+    let results = cache[domainConfig.current].redirections;
     // Apply spam filter
     if (spam) {
-      results = results.filter(({ to }) => to !== `spam@${domain}`);
+      results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
     }
     // Apply search filter
     if (search) {
@@ -621,10 +641,10 @@ redir
 
 redir
   .command('ban <localPart...>')
-  .description(`Create redirections localPart@${domain} to spam@${domain}`)
+  .description(`Create redirections localPart@<domain> to spam@<domain>`)
   .action(async localParts => {
     for await (const localPart of localParts) {
-      await createRedir(`${localPart}@${domain}`, `spam@${domain}`);
+      await createRedir(`${localPart}@${domainConfig.current}`, `spam@${domainConfig.current}`);
     }
     await updateRedirections();
   });
@@ -639,7 +659,7 @@ redir
       // Check if 'from' contains the domain when it shouldn't
       if (from && from.includes('@')) {
         const fromDomain = from.split('@')[1];
-        if (fromDomain === domain) {
+        if (fromDomain === domainConfig.current) {
           const localPart = from.split('@')[0];
           console.error(chalk.yellow(`⚠️  You provided a full email address with domain: ${chalk.bold(from)}`));
           console.error(chalk.yellow(`    For this command, only the local part is needed.\n`));
@@ -680,14 +700,20 @@ redir
         return;
       }
 
+      // Ensure from is a full email address
+      const fromEmail = fromSanitized.includes('@') ? fromSanitized : `${fromSanitized}@${domainConfig.current}`;
+
       if (toSanitized) {
-        await createRedir(fromSanitized, toSanitized);
+        await createRedir(fromEmail, toSanitized);
       } else {
         await createDefaultRedir(fromSanitized);
       }
       await updateRedirections();
     } catch (err) {
-      console.error(chalk.red('Error creating redirection:'), err.message);
+      console.error(chalk.red('Error creating redirection:'), err.message || err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[DEBUG]', err);
+      }
     }
   });
 
