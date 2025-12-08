@@ -317,6 +317,9 @@ const redirByFrom = str => cache[domainConfig.current].redirections.find(({ from
  * et en en supprimant celles n'existant plus.
  */
 const updateRedirections = async () => {
+  // Ensure cache structure exists
+  ensureCacheForDomain(domainConfig.current);
+
   const allRedirIds = await ovhRequest('GET', `/email/domain/${domainConfig.current}/redirection`);
   const existingRedirIds = cache[domainConfig.current].redirections.map(({ id }) => id);
 
@@ -723,6 +726,9 @@ redir
   .argument('<from...>')
   .action(async items => {
     try {
+      // Ensure cache exists
+      ensureCacheForDomain(domainConfig.current);
+
       for await (const item of items) {
         try {
           const isId = Number(item).toString() === item;
@@ -731,12 +737,18 @@ redir
           : validateCliArg(item, 'localOrEmail');
           await deleteRedir(isId ? sanitized : redirByFrom(sanitized).id);
         } catch (err) {
-          console.error(`Failed to delete "${item}":`, err.message);
+          console.error(`Failed to delete "${item}":`, err.message || err);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[DEBUG]', err);
+          }
         }
       }
       await updateRedirections();
     } catch (err) {
-      console.error('Unexpected error:', err.message);
+      console.error('Unexpected error:', err.message || err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[DEBUG]', err);
+      }
     }
   });
 
@@ -766,10 +778,16 @@ redir
       await changeRedir(redirId, sanitizedTo);
       console.log(`Redirection modified: ID ${redirId} → ${sanitizedTo}`);
 
+      // Ensure cache exists before update
+      ensureCacheForDomain(domainConfig.current);
+
       // Update cache
       await updateRedirections();
     } catch (err) {
-      console.error('Failed to modify redirection:', err.message);
+      console.error('Failed to modify redirection:', err.message || err);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[DEBUG]', err);
+      }
     }
   });
 
