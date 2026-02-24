@@ -613,11 +613,12 @@ redir
   .description('List all cached redirections')
   .option('-u, --update', 'Update before displaying redirections')
   .option('--no-spam', 'Hide spam redirections')
+  .option('--noplus', 'Hide DEFAULT_TO-pattern redirections (implies --no-spam)')
   .option('-f, --format <format>', 'Output format: table, json, or csv (default: table)')
   .option('-s, --sort <column>', 'Sort by column: from, to, or id (default: from)')
   .option('-r, --reverse', 'Reverse sort order')
   .option('-q, --search <query>', 'Filter results by search query')
-  .action(async ({ update, spam, format, sort, reverse, search }) => {
+  .action(async ({ update, spam, noplus, format, sort, reverse, search }) => {
     if (update) {
       await updateRedirections();
     }
@@ -625,6 +626,16 @@ redir
     // Apply spam filter
     if (!spam) {
       results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
+    }
+    // Apply noplus filter (implies spam filter)
+    if (noplus) {
+      results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
+      if (process.env.DEFAULT_TO) {
+        const plusPattern = new RegExp(
+          '^' + process.env.DEFAULT_TO.replace(/[.+]/g, '\\$&').replace('{{alias}}', '.+') + '$'
+        );
+        results = results.filter(({ to }) => !plusPattern.test(to));
+      }
     }
     // Apply search filter
     if (search) {
