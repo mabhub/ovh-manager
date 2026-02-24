@@ -623,7 +623,7 @@ redir
     }
     let results = cache[domainConfig.current].redirections;
     // Apply spam filter
-    if (spam) {
+    if (!spam) {
       results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
     }
     // Apply search filter
