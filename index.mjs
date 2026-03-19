@@ -111,8 +111,9 @@ const formatOutput = (data, format = 'table', columns = null) => {
   const cols = columns || Object.keys(data[0]);
 
   if (format === 'csv') {
+    const csvEscape = val => String(val ?? 'N/A').replace(/"/g, '""');
     const rows = data.map(item =>
-      cols.map(col => `"${item[col] || 'N/A'}"`)
+      cols.map(col => `"${csvEscape(item[col])}"`)
     );
     return [cols.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
@@ -177,11 +178,12 @@ const formatRedirections = (redirections, format = 'table') => {
     return JSON.stringify(redirections, null, 2);
   }
   if (format === 'csv') {
+    const csvEscape = val => String(val ?? 'N/A').replace(/"/g, '""');
     const headers = ['id', 'from', 'to'];
     const rows = redirections.map(({ id, from, to }) => [
-      `"${id}"`,
-      `"${from}"`,
-      `"${to}"`,
+      `"${csvEscape(id)}"`,
+      `"${csvEscape(from)}"`,
+      `"${csvEscape(to)}"`,
     ]);
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
@@ -277,10 +279,13 @@ const domainConfig = {
 };
 
 const accessRules = [
-  { 'method': 'GET', 'path': '/*'},
-  { 'method': 'POST', 'path': '/*'},
-  { 'method': 'PUT', 'path': '/*'},
-  { 'method': 'DELETE', 'path': '/*'}
+  { method: 'GET', path: '/me' },
+  { method: 'GET', path: '/me/contact/*' },
+  { method: 'GET', path: '/email/domain/*' },
+  { method: 'POST', path: '/email/domain/*' },
+  { method: 'DELETE', path: '/email/domain/*' },
+  { method: 'GET', path: '/domain/*' },
+  { method: 'POST', path: '/auth/credential' },
 ];
 
 let cache = {};
@@ -632,7 +637,7 @@ redir
       results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
       if (process.env.DEFAULT_TO) {
         const plusPattern = new RegExp(
-          '^' + process.env.DEFAULT_TO.replace(/[.+]/g, '\\$&').replace('{{alias}}', '.+') + '$'
+          '^' + process.env.DEFAULT_TO.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{\\{alias\\}\\}', '.+') + '$'
         );
         results = results.filter(({ to }) => !plusPattern.test(to));
       }
