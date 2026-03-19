@@ -1111,6 +1111,236 @@ domainCmd
     }
   });
 
+const BASH_COMPLETION = `_ovh_completions() {
+  local cur prev words cword
+  _init_completion || return
+
+  local commands="auth redir status quota domain completion"
+  local redir_cmds="list update ban create delete modify"
+  local domain_cmds="list contacts:list dns:list zone:info zone:records"
+
+  case "\${cword}" in
+    1)
+      COMPREPLY=( \$(compgen -W "\${commands}" -- "\${cur}") )
+      return
+      ;;
+    2)
+      case "\${prev}" in
+        redir)
+          COMPREPLY=( \$(compgen -W "\${redir_cmds}" -- "\${cur}") )
+          return
+          ;;
+        domain)
+          COMPREPLY=( \$(compgen -W "\${domain_cmds}" -- "\${cur}") )
+          return
+          ;;
+        completion)
+          COMPREPLY=( \$(compgen -W "--shell" -- "\${cur}") )
+          return
+          ;;
+      esac
+      ;;
+  esac
+
+  # Option value completions
+  case "\${prev}" in
+    --format|-f)
+      COMPREPLY=( \$(compgen -W "table json csv" -- "\${cur}") )
+      return
+      ;;
+    --sort|-s)
+      COMPREPLY=( \$(compgen -W "from to id" -- "\${cur}") )
+      return
+      ;;
+    --shell)
+      COMPREPLY=( \$(compgen -W "bash zsh" -- "\${cur}") )
+      return
+      ;;
+    --domain|-d)
+      return
+      ;;
+  esac
+
+  # Context-sensitive option completions
+  local subcmd=""
+  local i
+  for (( i=1; i < cword; i++ )); do
+    case "\${words[i]}" in
+      redir|domain) subcmd="\${words[i]}:\${words[i+1]}"; break ;;
+      auth|status|quota|completion) subcmd="\${words[i]}"; break ;;
+    esac
+  done
+
+  if [[ "\${cur}" == -* ]]; then
+    local opts=""
+    case "\${subcmd}" in
+      redir:list)     opts="--update --no-spam --noplus --format --sort --reverse --search --help" ;;
+      redir:ban)      opts="--help" ;;
+      redir:create)   opts="--help" ;;
+      redir:delete)   opts="--help" ;;
+      redir:modify)   opts="--help" ;;
+      redir:update)   opts="--help" ;;
+      quota)          opts="--per-account --summary --simple --format --help" ;;
+      domain:list)    opts="--format --help" ;;
+      domain:contacts:list) opts="--format --help" ;;
+      domain:dns:list)      opts="--format --help" ;;
+      domain:zone:info)     opts="--format --help" ;;
+      domain:zone:records)  opts="--format --filter --help" ;;
+      completion)     opts="--shell --help" ;;
+    esac
+    COMPREPLY=( \$(compgen -W "\${opts}" -- "\${cur}") )
+  fi
+}
+
+complete -F _ovh_completions ovh
+`;
+
+const ZSH_COMPLETION = `#compdef ovh
+
+_ovh() {
+  local -a commands redir_cmds domain_cmds formats sort_cols shells
+
+  commands=(
+    'auth:Authenticate with OVH API'
+    'redir:Manage redirections'
+    'status:Account informations'
+    'quota:Display quota usage for the email domain'
+    'domain:Manage domain services'
+    'completion:Generate shell completion script'
+  )
+
+  redir_cmds=(
+    'list:List all cached redirections'
+    'update:Update cached redirections'
+    'ban:Create redirections to spam'
+    'create:Create a new redirection'
+    'delete:Delete an existing redirection'
+    'modify:Modify the destination of an existing redirection'
+  )
+
+  domain_cmds=(
+    'list:List all accessible domains'
+    'contacts\\:list:List all contacts for a domain'
+    'dns\\:list:List nameservers for a domain'
+    'zone\\:info:Display DNS zone information'
+    'zone\\:records:List all DNS records for a zone'
+  )
+
+  formats=(table json csv)
+  sort_cols=(from to id)
+  shells=(bash zsh)
+
+  _arguments -C \\
+    '(-d --domain)'{-d,--domain}'[Override default domain]:domain:' \\
+    '--help[Show help]' \\
+    '--version[Show version]' \\
+    '1:command:->cmds' \\
+    '*::arg:->args'
+
+  case "\$state" in
+    cmds)
+      _describe -t commands 'ovh command' commands
+      ;;
+    args)
+      case "\${words[1]}" in
+        redir)
+          _arguments -C \\
+            '1:subcommand:->redir_cmds' \\
+            '*::arg:->redir_args'
+          case "\$state" in
+            redir_cmds)
+              _describe -t commands 'redir subcommand' redir_cmds
+              ;;
+            redir_args)
+              case "\${words[1]}" in
+                list)
+                  _arguments \\
+                    '(-u --update)'{-u,--update}'[Update before displaying]' \\
+                    '--no-spam[Hide spam redirections]' \\
+                    '--noplus[Hide DEFAULT_TO-pattern redirections]' \\
+                    '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)' \\
+                    '(-s --sort)'{-s,--sort}'[Sort by column]:column:(from to id)' \\
+                    '(-r --reverse)'{-r,--reverse}'[Reverse sort order]' \\
+                    '(-q --search)'{-q,--search}'[Filter results by search query]:query:'
+                  ;;
+                ban)
+                  _arguments '*:localPart:'
+                  ;;
+                create)
+                  _arguments '1:from:' '2:to:'
+                  ;;
+                delete)
+                  _arguments '*:from:'
+                  ;;
+                modify)
+                  _arguments '1:source:' '2:newTo:'
+                  ;;
+              esac
+              ;;
+          esac
+          ;;
+        domain)
+          _arguments -C \\
+            '1:subcommand:->domain_cmds' \\
+            '*::arg:->domain_args'
+          case "\$state" in
+            domain_cmds)
+              _describe -t commands 'domain subcommand' domain_cmds
+              ;;
+            domain_args)
+              case "\${words[1]}" in
+                list)
+                  _arguments '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)'
+                  ;;
+                contacts:list|dns:list|zone:info)
+                  _arguments \\
+                    '1:domainName:' \\
+                    '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)'
+                  ;;
+                zone:records)
+                  _arguments \\
+                    '1:zoneName:' \\
+                    '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)' \\
+                    '--filter[Filter records by type]:type:(A AAAA MX CNAME TXT SRV NS SOA PTR)'
+                  ;;
+              esac
+              ;;
+          esac
+          ;;
+        quota)
+          _arguments \\
+            '(-p --per-account)'{-p,--per-account}'[Show usage per account]' \\
+            '(-s --summary)'{-s,--summary}'[Show compact summary format]' \\
+            '--simple[Show simple max values only]' \\
+            '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)'
+          ;;
+        completion)
+          _arguments \\
+            '--shell[Shell type]:shell:(bash zsh)'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_ovh "\$@"
+`;
+
+program
+  .command('completion')
+  .description('Generate shell completion script')
+  .requiredOption('--shell <type>', 'Shell type (bash or zsh)')
+  .action((opts) => {
+    const scripts = { bash: BASH_COMPLETION, zsh: ZSH_COMPLETION };
+    const script = scripts[opts.shell];
+    if (!script) {
+      console.error(`Unsupported shell: ${opts.shell}. Supported: bash, zsh`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(script);
+  });
+
 program.parse();
 
 // Global error handling for unhandled promise rejections and uncaught exceptions
