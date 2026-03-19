@@ -350,8 +350,10 @@ const updateRedirections = async () => {
   await fs.writeFile(`${basePath}/cache.json`, JSON.stringify(cache, null, 2));
 };
 
+const spamAddress = () => `spam@${domainConfig.current}`;
+
 const prettyMail = str => {
-  if (str === `spam@${domainConfig.current}`) {
+  if (str === spamAddress()) {
     return chalk.red(str);
   }
 
@@ -361,7 +363,7 @@ const prettyMail = str => {
     return str;
   }
 
-  const { 0: _full, 1: left, 2: right } = match;
+  const [, left, right] = match;
   return `${left}${chalk.gray(`@${right}`)}`;
 };
 
@@ -630,11 +632,11 @@ redir
     let results = cache[domainConfig.current].redirections;
     // Apply spam filter
     if (!spam) {
-      results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
+      results = results.filter(({ to }) => to !== spamAddress());
     }
     // Apply noplus filter (implies spam filter)
     if (noplus) {
-      results = results.filter(({ to }) => to !== `spam@${domainConfig.current}`);
+      results = results.filter(({ to }) => to !== spamAddress());
       if (process.env.DEFAULT_TO) {
         const plusPattern = new RegExp(
           '^' + process.env.DEFAULT_TO.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\{\\{alias\\}\\}', '.+') + '$'
@@ -663,7 +665,7 @@ redir
   .description(`Create redirections localPart@<domain> to spam@<domain>`)
   .action(async localParts => {
     for (const localPart of localParts) {
-      await createRedir(`${localPart}@${domainConfig.current}`, `spam@${domainConfig.current}`);
+      await createRedir(`${localPart}@${domainConfig.current}`, spamAddress());
     }
     await updateRedirections();
   });
@@ -998,13 +1000,6 @@ domainCmd
     } catch (err) {
       console.error('Failed to list domains:', err.message);
     }
-  });
-
-domainCmd
-  .command('contacts <_domainName>')
-  .description('Manage contacts for a domain')
-  .action(() => {
-    // This will be handled by subcommands
   });
 
 domainCmd
