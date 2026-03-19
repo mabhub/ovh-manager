@@ -315,7 +315,7 @@ ensureCacheForDomain(domainConfig.current);
 const getMe = () => ovhRequest('GET', '/me');
 // const summary = await ovhRequest('GET', `/email/domain/${domainConfig.current}/summary`);
 
-const redirByFrom = str => cache[domainConfig.current].redirections.find(({ from }) => [str, `${str}@${domainConfig.current}`].includes(from)) || {};
+const redirByFrom = str => cache[domainConfig.current].redirections.find(({ from }) => [str, `${str}@${domainConfig.current}`].includes(from)) || null;
 
 /**
  * Met à jour cache.json en ajoutant les nouvelles redirections,
@@ -331,7 +331,7 @@ const updateRedirections = async () => {
   const newRedirIds = allRedirIds.filter(rId => !existingRedirIds.includes(rId));
   const newRedirections = [];
 
-  for await (const redirectionId of newRedirIds) {
+  for (const redirectionId of newRedirIds) {
     const details = await ovhRequest('GET', `/email/domain/${domainConfig.current}/redirection/${redirectionId}`);
     newRedirections.push(details);
   }
@@ -372,7 +372,7 @@ const listRedirections = (redirections, format = 'table') => {
 
 const deleteRedir = async (...ids) => {
   if (ids && ids.length) {
-    for await (const id of ids) {
+    for (const id of ids) {
       await ovhRequest('DELETE', `/email/domain/${domainConfig.current}/redirection/${id}`);
     }
   }
@@ -662,7 +662,7 @@ redir
   .command('ban <localPart...>')
   .description(`Create redirections localPart@<domain> to spam@<domain>`)
   .action(async localParts => {
-    for await (const localPart of localParts) {
+    for (const localPart of localParts) {
       await createRedir(`${localPart}@${domainConfig.current}`, `spam@${domainConfig.current}`);
     }
     await updateRedirections();
@@ -745,13 +745,18 @@ redir
       // Ensure cache exists
       ensureCacheForDomain(domainConfig.current);
 
-      for await (const item of items) {
+      for (const item of items) {
         try {
-          const isId = Number(item).toString() === item;
+          const isId = /^\d+$/.test(item);
           const sanitized = isId
           ? validateCliArg(item, 'id')
           : validateCliArg(item, 'localOrEmail');
-          await deleteRedir(isId ? sanitized : redirByFrom(sanitized).id);
+          const redirId = isId ? sanitized : redirByFrom(sanitized)?.id;
+          if (!redirId) {
+            console.error(`Redirection "${item}" not found.`);
+            continue;
+          }
+          await deleteRedir(redirId);
         } catch (err) {
           console.error(`Failed to delete "${item}":`, err.message || err);
           if (process.env.NODE_ENV === 'development') {
@@ -776,14 +781,14 @@ redir
   .action(async (source, newTo) => {
     try {
       // Determine if source is an ID or email/local part
-      const isId = Number(source).toString() === source;
+      const isId = /^\d+$/.test(source);
       const sanitizedSource = isId
         ? validateCliArg(source, 'id')
         : validateCliArg(source, 'localOrEmail');
       const sanitizedTo = validateCliArg(newTo, 'email');
 
       // Find the redirection ID
-      const redirId = isId ? sanitizedSource : redirByFrom(sanitizedSource).id;
+      const redirId = isId ? sanitizedSource : redirByFrom(sanitizedSource)?.id;
 
       if (!redirId) {
         console.error(`No redirection found for "${source}".`);
