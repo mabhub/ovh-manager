@@ -758,7 +758,7 @@ redir
           : validateCliArg(item, 'localOrEmail');
           const redirId = isId ? sanitized : redirByFrom(sanitized)?.id;
           if (!redirId) {
-            console.error(`Redirection "${item}" not found.`);
+            console.error(`Redirection "${item}" not found. Run "ovh redir update" to refresh the cache.`);
             continue;
           }
           await deleteRedir(redirId);
@@ -796,7 +796,7 @@ redir
       const redirId = isId ? sanitizedSource : redirByFrom(sanitizedSource)?.id;
 
       if (!redirId) {
-        console.error(`No redirection found for "${source}".`);
+        console.error(`No redirection found for "${source}". Run "ovh redir update" to refresh the cache.`);
         return;
       }
 
