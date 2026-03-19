@@ -348,8 +348,12 @@ const updateRedirections = async () => {
   ].sort(({ from: a }, { from: b }) => a.localeCompare(b));
 
   console.log(`${allRedirIds.length} remote redirection(s)`);
-  console.log(`${newRedirections.length} new redirection(s)`);
-  console.log(`${deletedRedirIds.length} deleted redirection(s)`);
+  if (newRedirections.length > 0) {
+    console.log(`${newRedirections.length} new redirection(s)`);
+  }
+  if (deletedRedirIds.length > 0) {
+    console.log(`${deletedRedirIds.length} deleted redirection(s)`);
+  }
 
   await fs.writeFile(`${basePath}/cache.json`, JSON.stringify(cache, null, 2));
 };
