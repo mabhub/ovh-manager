@@ -377,21 +377,20 @@ const listRedirections = (redirections, format = 'table') => {
 };
 
 const deleteRedir = async (...ids) => {
-  if (ids && ids.length) {
-    for (const id of ids) {
-      await ovhRequest('DELETE', `/email/domain/${domainConfig.current}/redirection/${id}`);
-    }
+  for (const id of ids) {
+    await ovhRequest('DELETE', `/email/domain/${domainConfig.current}/redirection/${id}`);
+    console.log(chalk.green(`Deleted redirection ${id}`));
   }
 };
 
 const changeRedir = async (id, to) => {
   if (id && to) {
-    const response = await ovhRequest(
+    await ovhRequest(
       'POST',
       `/email/domain/${domainConfig.current}/redirection/${id}/changeRedirection`,
       { to },
     );
-    console.log(response);
+    console.log(chalk.green(`Modified redirection ${id} → ${to}`));
   }
 };
 
@@ -582,12 +581,12 @@ const createProgressBar = (used, max, width = 10) => {
 
 const createRedir = async (from, to) => {
   if (from && to) {
-    const response = await ovhRequest(
+    await ovhRequest(
       'POST',
       `/email/domain/${domainConfig.current}/redirection`,
       { from, to, localCopy: false },
     );
-    console.log(response);
+    console.log(chalk.green(`Created: ${from} → ${to}`));
   }
 };
 
@@ -801,9 +800,7 @@ redir
         return;
       }
 
-      // Perform the modification
       await changeRedir(redirId, sanitizedTo);
-      console.log(`Redirection modified: ID ${redirId} → ${sanitizedTo}`);
 
       // Ensure cache exists before update
       ensureCacheForDomain(domainConfig.current);
