@@ -332,8 +332,12 @@ const updateRedirections = async () => {
   const newRedirections = [];
 
   for (const redirectionId of newRedirIds) {
-    const details = await ovhRequest('GET', `/email/domain/${domainConfig.current}/redirection/${redirectionId}`);
-    newRedirections.push(details);
+    try {
+      const details = await ovhRequest('GET', `/email/domain/${domainConfig.current}/redirection/${redirectionId}`);
+      newRedirections.push(details);
+    } catch {
+      // Redirection may have been deleted between listing and fetching details
+    }
   }
 
   const deletedRedirIds = existingRedirIds.filter(id => !allRedirIds.includes(id));
@@ -343,7 +347,7 @@ const updateRedirections = async () => {
     ...newRedirections,
   ].sort(({ from: a }, { from: b }) => a.localeCompare(b));
 
-  console.log(`${existingRedirIds.length} remote redirection(s)`);
+  console.log(`${allRedirIds.length} remote redirection(s)`);
   console.log(`${newRedirections.length} new redirection(s)`);
   console.log(`${deletedRedirIds.length} deleted redirection(s)`);
 
