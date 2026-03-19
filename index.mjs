@@ -491,7 +491,7 @@ const getQuotaUsage = async () => {
     },
     alias: {
       max: quota.alias || 0,
-      used: summary.account || 0, // Note: summary doesn't have alias count
+      used: 0, // OVH API DomainSummary does not expose alias count
     },
     mailingList: {
       max: quota.mailingList || 0,
