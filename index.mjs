@@ -442,7 +442,10 @@ const getDnsRecords = async (zoneName) => {
           target: record.target || 'N/A',
           ttl: record.ttl || 'N/A',
         };
-      } catch {
+      } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error(`[DEBUG] Failed to fetch record ${recordId}:`, err.message);
+        }
         return {
           id: recordId,
           subDomain: 'error',
@@ -552,7 +555,10 @@ const getAccountsUsage = async () => {
             quotaUsed: usage.quota?.current || 0,
             quotaMax: usage.quota?.max || 0,
           };
-        } catch {
+        } catch (err) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`[DEBUG] Failed to fetch account ${accountName}:`, err.message);
+          }
           return {
             accountName,
             description: 'error',
@@ -919,7 +925,10 @@ domainCmd
               ownerContact: info.ownerContact || 'N/A',
               expirationDate: info.expirationDate || 'N/A',
             };
-          } catch {
+          } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[DEBUG] Failed to fetch domain ${domainName}:`, err.message);
+            }
             return {
               name: domainName,
               status: 'error',
@@ -987,7 +996,10 @@ domainCmd
               host: nsInfo.host || 'N/A',
               ip: nsInfo.ip || 'N/A',
             };
-          } catch {
+          } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[DEBUG] Failed to fetch nameserver ${nsId}:`, err.message);
+            }
             return {
               id: nsId,
               host: 'error',
