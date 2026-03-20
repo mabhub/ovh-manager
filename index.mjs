@@ -831,6 +831,35 @@ redir
     }
   });
 
+redir
+  .command('task')
+  .description('List pending redirection tasks')
+  .option('-f, --format <format>', 'Output format: table, json, or csv')
+  .action(async ({ format }) => {
+    try {
+      const taskIds = await ovhRequest('GET', `/email/domain/${domainConfig.current}/task/redirection`);
+      if (!taskIds || taskIds.length === 0) {
+        console.log('No pending tasks.');
+        return;
+      }
+      const tasks = await Promise.all(
+        taskIds.map(async (id) => {
+          try {
+            return await ovhRequest('GET', `/email/domain/${domainConfig.current}/task/redirection/${id}`);
+          } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[DEBUG] Failed to fetch task ${id}:`, err.message);
+            }
+            return { id, action: 'error', account: 'error' };
+          }
+        })
+      );
+      console.log(formatOutput(tasks, format));
+    } catch (err) {
+      console.error('Failed to list redirection tasks:', err.message);
+    }
+  });
+
 program
   .command('status')
   .description('Account informations')
