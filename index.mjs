@@ -1109,6 +1109,64 @@ domainCmd
     }
   });
 
+domainCmd
+  .command('mx')
+  .description('Display MX records for the email domain')
+  .option('-f, --format <format>', 'Output format: table, json, or csv')
+  .action(async ({ format }) => {
+    try {
+      const records = await ovhRequest('GET', `/email/domain/${domainConfig.current}/dnsMXRecords`);
+      if (!records || records.length === 0) {
+        console.log('No MX records found.');
+        return;
+      }
+      const data = records.map((target, i) => ({ priority: i + 1, target }));
+      console.log(formatOutput(data, format));
+    } catch (err) {
+      console.error('Failed to retrieve MX records:', err.message);
+    }
+  });
+
+domainCmd
+  .command('dkim')
+  .description('Display DKIM configuration for the email domain')
+  .option('-f, --format <format>', 'Output format: table, json, or csv')
+  .action(async ({ format }) => {
+    try {
+      const dkim = await ovhRequest('GET', `/email/domain/${domainConfig.current}/dkim`);
+      if (format === 'json') {
+        console.log(JSON.stringify(dkim, null, 2));
+        return;
+      }
+      console.log(`Status: ${dkim.status || 'N/A'}`);
+      console.log(`Active selector: ${dkim.activeSelector || 'none'}`);
+      console.log(`Autoconfig: ${dkim.autoconfig ?? 'N/A'}`);
+      if (dkim.selectors && dkim.selectors.length > 0) {
+        console.log('');
+        console.log(formatOutput(dkim.selectors, format));
+      }
+    } catch (err) {
+      console.error('Failed to retrieve DKIM status:', err.message);
+    }
+  });
+
+domainCmd
+  .command('dns:recommended')
+  .description('Display recommended DNS records for the email domain')
+  .option('-f, --format <format>', 'Output format: table, json, or csv')
+  .action(async ({ format }) => {
+    try {
+      const records = await ovhRequest('GET', `/email/domain/${domainConfig.current}/recommendedDNSRecords`);
+      if (!records || records.length === 0) {
+        console.log('No recommended records.');
+        return;
+      }
+      console.log(formatOutput(records, format));
+    } catch (err) {
+      console.error('Failed to retrieve recommended DNS records:', err.message);
+    }
+  });
+
 const BASH_COMPLETION = `_ovh_completions() {
   local cur prev words cword
   _init_completion || return
