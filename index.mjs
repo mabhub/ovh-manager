@@ -1201,8 +1201,8 @@ const BASH_COMPLETION = `_ovh_completions() {
   _init_completion || return
 
   local commands="auth redir status quota domain completion"
-  local redir_cmds="list update ban create delete modify"
-  local domain_cmds="list contacts:list dns:list zone:info zone:records"
+  local redir_cmds="list update ban create delete modify task"
+  local domain_cmds="list contacts:list dns:list zone:info zone:records zone:export zone:refresh zone:status zone:soa mx dkim dns:recommended"
 
   case "\${cword}" in
     1)
@@ -1265,12 +1265,20 @@ const BASH_COMPLETION = `_ovh_completions() {
       redir:delete)   opts="--help" ;;
       redir:modify)   opts="--help" ;;
       redir:update)   opts="--help" ;;
+      redir:task)     opts="--format --help" ;;
       quota)          opts="--per-account --summary --simple --format --help" ;;
       domain:list)    opts="--format --help" ;;
       domain:contacts:list) opts="--format --help" ;;
       domain:dns:list)      opts="--format --help" ;;
       domain:zone:info)     opts="--format --help" ;;
       domain:zone:records)  opts="--format --filter --help" ;;
+      domain:zone:export)   opts="--help" ;;
+      domain:zone:refresh)  opts="--help" ;;
+      domain:zone:status)   opts="--format --help" ;;
+      domain:zone:soa)      opts="--format --help" ;;
+      domain:mx)            opts="--format --help" ;;
+      domain:dkim)          opts="--format --help" ;;
+      domain:dns:recommended) opts="--format --help" ;;
       completion)     opts="--shell --help" ;;
     esac
     COMPREPLY=( \$(compgen -W "\${opts}" -- "\${cur}") )
@@ -1301,6 +1309,7 @@ _ovh() {
     'create:Create a new redirection'
     'delete:Delete an existing redirection'
     'modify:Modify the destination of an existing redirection'
+    'task:List pending redirection tasks'
   )
 
   domain_cmds=(
@@ -1309,6 +1318,13 @@ _ovh() {
     'dns\\:list:List nameservers for a domain'
     'zone\\:info:Display DNS zone information'
     'zone\\:records:List all DNS records for a zone'
+    'zone\\:export:Export DNS zone as BIND zone file'
+    'zone\\:refresh:Apply pending DNS zone changes'
+    'zone\\:status:Display DNS zone deployment status'
+    'zone\\:soa:Display DNS zone SOA record'
+    'mx:Display MX records for the email domain'
+    'dkim:Display DKIM configuration'
+    'dns\\:recommended:Display recommended DNS records'
   )
 
   formats=(table json csv)
@@ -1360,6 +1376,9 @@ _ovh() {
                 modify)
                   _arguments '1:source:' '2:newTo:'
                   ;;
+                task)
+                  _arguments '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)'
+                  ;;
               esac
               ;;
           esac
@@ -1387,6 +1406,17 @@ _ovh() {
                     '1:zoneName:' \\
                     '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)' \\
                     '--filter[Filter records by type]:type:(A AAAA MX CNAME TXT SRV NS SOA PTR)'
+                  ;;
+                zone:export|zone:refresh)
+                  _arguments '1:zoneName:'
+                  ;;
+                zone:status|zone:soa)
+                  _arguments \\
+                    '1:zoneName:' \\
+                    '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)'
+                  ;;
+                mx|dkim|dns:recommended)
+                  _arguments '(-f --format)'{-f,--format}'[Output format]:format:(table json csv)'
                   ;;
               esac
               ;;
