@@ -1059,6 +1059,56 @@ domainCmd
     }
   });
 
+domainCmd
+  .command('zone:export <zoneName>')
+  .description('Export DNS zone as BIND zone file')
+  .action(async (zoneName) => {
+    try {
+      const zoneFile = await ovhRequest('GET', `/domain/zone/${zoneName}/export`);
+      console.log(zoneFile);
+    } catch (err) {
+      console.error('Failed to export zone:', err.message);
+    }
+  });
+
+domainCmd
+  .command('zone:refresh <zoneName>')
+  .description('Apply pending DNS zone changes')
+  .action(async (zoneName) => {
+    try {
+      await ovhRequest('POST', `/domain/zone/${zoneName}/refresh`);
+      console.log(chalk.green(`Zone ${zoneName} refreshed`));
+    } catch (err) {
+      console.error('Failed to refresh zone:', err.message);
+    }
+  });
+
+domainCmd
+  .command('zone:status <zoneName>')
+  .description('Display DNS zone deployment status')
+  .option('-f, --format <format>', 'Output format: table, json, or csv')
+  .action(async (zoneName, { format }) => {
+    try {
+      const status = await ovhRequest('GET', `/domain/zone/${zoneName}/status`);
+      console.log(formatOutput([status], format));
+    } catch (err) {
+      console.error('Failed to retrieve zone status:', err.message);
+    }
+  });
+
+domainCmd
+  .command('zone:soa <zoneName>')
+  .description('Display DNS zone SOA record')
+  .option('-f, --format <format>', 'Output format: table, json, or csv')
+  .action(async (zoneName, { format }) => {
+    try {
+      const soa = await ovhRequest('GET', `/domain/zone/${zoneName}/soa`);
+      console.log(formatOutput([soa], format));
+    } catch (err) {
+      console.error('Failed to retrieve SOA record:', err.message);
+    }
+  });
+
 const BASH_COMPLETION = `_ovh_completions() {
   local cur prev words cword
   _init_completion || return
