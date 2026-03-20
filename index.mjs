@@ -664,7 +664,7 @@ redir
     const sortOrder = reverse ? 'desc' : 'asc';
     results = sortRedirections(results, sort || 'from', sortOrder);
     // Display results
-    listRedirections(results, format || 'table');
+    listRedirections(results, format);
   });
 
 redir
@@ -847,7 +847,7 @@ program
           console.log('No accounts found.');
           return;
         }
-        const output = formatOutput(accountsUsage, format || 'table', ['accountName', 'description', 'usage']);
+        const output = formatOutput(accountsUsage, format, ['accountName', 'description', 'usage']);
         console.log(output);
         return;
       }
@@ -1005,7 +1005,7 @@ domainCmd
         })
       );
       // Format output
-      const output = formatOutput(domainDetails, format || 'table');
+      const output = formatOutput(domainDetails, format);
       console.log(output);
     } catch (err) {
       console.error('Failed to list domains:', err.message);
@@ -1035,7 +1035,7 @@ domainCmd
         Tech: techFormatted,
       };
 
-      const output = formatOutput([contactInfo], format || 'table');
+      const output = formatOutput([contactInfo], format);
       console.log(output);
     } catch (err) {
       console.error('Failed to list contacts:', err.message);
@@ -1071,7 +1071,7 @@ domainCmd
           }
         })
       );
-      const output = formatOutput(nsDetails, format || 'table');
+      const output = formatOutput(nsDetails, format);
       console.log(output);
     } catch (err) {
       console.error('Failed to list nameservers:', err.message);
@@ -1085,7 +1085,7 @@ domainCmd
   .action(async (zoneName, { format }) => {
     try {
       const zoneInfo = await getDnsZone(zoneName);
-      const output = formatOutput([zoneInfo], format || 'table');
+      const output = formatOutput([zoneInfo], format);
       console.log(output);
     } catch (err) {
       console.error('Failed to retrieve zone information:', err.message);
@@ -1114,7 +1114,7 @@ domainCmd
           return;
         }
       }
-      const output = formatOutput(records, format || 'table');
+      const output = formatOutput(records, format);
       console.log(output);
     } catch (err) {
       console.error('Failed to list zone records:', err.message);
