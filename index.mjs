@@ -290,6 +290,7 @@ const accessRules = [
   { method: 'POST', path: '/email/domain/*' },
   { method: 'DELETE', path: '/email/domain/*' },
   { method: 'GET', path: '/domain/*' },
+  { method: 'POST', path: '/domain/*' },
   { method: 'POST', path: '/auth/credential' },
 ];
 
