@@ -92,6 +92,13 @@ const truncateCell = (text, maxWidth) => {
 };
 
 /**
+ * Escape a value for safe CSV output (RFC 4180).
+ * @param {any} val - Value to escape
+ * @returns {string} - Escaped string
+ */
+const csvEscape = (val) => String(val ?? 'N/A').replace(/"/g, '""');
+
+/**
  * Format data for output in different formats (table, json, csv).
  * @param {Array} data - Array of objects to format
  * @param {string} format - Output format: 'table' (default), 'json', or 'csv'
@@ -111,7 +118,6 @@ const formatOutput = (data, format = 'table', columns = null) => {
   const cols = columns || Object.keys(data[0]);
 
   if (format === 'csv') {
-    const csvEscape = val => String(val ?? 'N/A').replace(/"/g, '""');
     const rows = data.map(item =>
       cols.map(col => `"${csvEscape(item[col])}"`)
     );
@@ -178,7 +184,6 @@ const formatRedirections = (redirections, format = 'table') => {
     return JSON.stringify(redirections, null, 2);
   }
   if (format === 'csv') {
-    const csvEscape = val => String(val ?? 'N/A').replace(/"/g, '""');
     const headers = ['id', 'from', 'to'];
     const rows = redirections.map(({ id, from, to }) => [
       `"${csvEscape(id)}"`,
@@ -869,7 +874,7 @@ program
             ['Mailing Lists', quotaData.mailingList.max],
             ['Redirections', quotaData.redirection.max],
             ['Responders', quotaData.responder.max],
-          ].map(([resource, max]) => [`"${resource}"`, max]);
+          ].map(([resource, max]) => [`"${csvEscape(resource)}"`, max]);
           console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
         } else {
           // Table format
@@ -899,7 +904,7 @@ program
           console.log(JSON.stringify(summaryData, null, 2));
         } else if (format === 'csv') {
           const headers = ['Resource', 'Usage'];
-          const rows = summaryData.map(({ resource, usage }) => [`"${resource}"`, `"${usage}"`]);
+          const rows = summaryData.map(({ resource, usage }) => [`"${csvEscape(resource)}"`, `"${csvEscape(usage)}"`]);
           console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
         } else {
           const output = formatOutput(summaryData, 'table', ['resource', 'usage']);
@@ -947,10 +952,10 @@ program
       } else if (format === 'csv') {
         const headers = ['Type', 'Used', 'Max', 'Usage'];
         const rows = quotaDetails.map(({ type, used, max, progress }) => [
-          `"${type}"`,
+          `"${csvEscape(type)}"`,
           used,
           max,
-          `"${progress}"`,
+          `"${csvEscape(progress)}"`,
         ]);
         console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
       } else {
