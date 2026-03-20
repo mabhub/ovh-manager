@@ -852,117 +852,42 @@ program
         return;
       }
 
-      // Get quota data
       const quotaData = await getQuotaUsage();
 
-      // Simple view (max values only)
-      if (simple) {
-        if (format === 'json') {
-          const simpleData = {
-            account: quotaData.account.max,
-            alias: quotaData.alias.max,
-            mailingList: quotaData.mailingList.max,
-            redirection: quotaData.redirection.max,
-            responder: quotaData.responder.max,
-          };
-          console.log(JSON.stringify(simpleData, null, 2));
-        } else if (format === 'csv') {
-          const headers = ['Resource', 'Max'];
-          const rows = [
-            ['Mailboxes', quotaData.account.max],
-            ['Aliases', quotaData.alias.max],
-            ['Mailing Lists', quotaData.mailingList.max],
-            ['Redirections', quotaData.redirection.max],
-            ['Responders', quotaData.responder.max],
-          ].map(([resource, max]) => [`"${csvEscape(resource)}"`, max]);
-          console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
-        } else {
-          // Table format
-          const defaultData = [
-            { resource: 'Mailboxes', max: quotaData.account.max },
-            { resource: 'Aliases', max: quotaData.alias.max },
-            { resource: 'Mailing Lists', max: quotaData.mailingList.max },
-            { resource: 'Redirections', max: quotaData.redirection.max },
-            { resource: 'Responders', max: quotaData.responder.max },
-          ];
-          const output = formatOutput(defaultData, 'table', ['resource', 'max']);
-          console.log(output);
-        }
-        return;
-      }
-
-      // Summary view (compact)
-      if (summary) {
-        const summaryData = [
-          { resource: 'Mailboxes', usage: `${quotaData.account.used}/${quotaData.account.max}` },
-          { resource: 'Redirections', usage: `${quotaData.redirection.used}/${quotaData.redirection.max}` },
-          { resource: 'Mailing Lists', usage: `${quotaData.mailingList.used}/${quotaData.mailingList.max}` },
-          { resource: 'Responders', usage: `${quotaData.responder.used}/${quotaData.responder.max}` },
-        ];
-
-        if (format === 'json') {
-          console.log(JSON.stringify(summaryData, null, 2));
-        } else if (format === 'csv') {
-          const headers = ['Resource', 'Usage'];
-          const rows = summaryData.map(({ resource, usage }) => [`"${csvEscape(resource)}"`, `"${csvEscape(usage)}"`]);
-          console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
-        } else {
-          const output = formatOutput(summaryData, 'table', ['resource', 'usage']);
-          console.log(output);
-        }
-        return;
-      }
-
-      // Default: Detailed view with progress bars
-      const quotaDetails = [
-        {
-          type: 'Mailboxes',
-          used: quotaData.account.used,
-          max: quotaData.account.max,
-          progress: createProgressBar(quotaData.account.used, quotaData.account.max),
-        },
-        {
-          type: 'Aliases',
-          used: quotaData.alias.used,
-          max: quotaData.alias.max,
-          progress: createProgressBar(quotaData.alias.used, quotaData.alias.max),
-        },
-        {
-          type: 'Mailing Lists',
-          used: quotaData.mailingList.used,
-          max: quotaData.mailingList.max,
-          progress: createProgressBar(quotaData.mailingList.used, quotaData.mailingList.max),
-        },
-        {
-          type: 'Redirections',
-          used: quotaData.redirection.used,
-          max: quotaData.redirection.max,
-          progress: createProgressBar(quotaData.redirection.used, quotaData.redirection.max),
-        },
-        {
-          type: 'Responders',
-          used: quotaData.responder.used,
-          max: quotaData.responder.max,
-          progress: createProgressBar(quotaData.responder.used, quotaData.responder.max),
-        },
+      const resources = [
+        { key: 'account', label: 'Mailboxes' },
+        { key: 'alias', label: 'Aliases' },
+        { key: 'mailingList', label: 'Mailing Lists' },
+        { key: 'redirection', label: 'Redirections' },
+        { key: 'responder', label: 'Responders' },
       ];
 
-      if (format === 'json') {
-        console.log(JSON.stringify(quotaDetails, null, 2));
-      } else if (format === 'csv') {
-        const headers = ['Type', 'Used', 'Max', 'Usage'];
-        const rows = quotaDetails.map(({ type, used, max, progress }) => [
-          `"${csvEscape(type)}"`,
-          used,
-          max,
-          `"${csvEscape(progress)}"`,
-        ]);
-        console.log([headers.join(','), ...rows.map(r => r.join(','))].join('\n'));
+      let data;
+      let columns;
+
+      if (simple) {
+        data = resources.map(({ key, label }) => ({
+          resource: label,
+          max: quotaData[key].max,
+        }));
+        columns = ['resource', 'max'];
+      } else if (summary) {
+        data = resources.map(({ key, label }) => ({
+          resource: label,
+          usage: `${quotaData[key].used}/${quotaData[key].max}`,
+        }));
+        columns = ['resource', 'usage'];
       } else {
-        // Table format
-        const output = formatOutput(quotaDetails, 'table', ['type', 'used', 'max', 'progress']);
-        console.log(output);
+        data = resources.map(({ key, label }) => ({
+          type: label,
+          used: quotaData[key].used,
+          max: quotaData[key].max,
+          progress: createProgressBar(quotaData[key].used, quotaData[key].max),
+        }));
+        columns = ['type', 'used', 'max', 'progress'];
       }
+
+      console.log(formatOutput(data, format, columns));
     } catch (err) {
       console.error('Failed to retrieve quota information:', err.message);
     }
